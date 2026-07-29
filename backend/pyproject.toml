@@ -1,0 +1,37 @@
+[project]
+name = "rag-lab-backend"
+version = "0.1.0"
+description = "RAG Lab — FastAPI API + RAG engine for 9 retrieval-augmented generation techniques"
+requires-python = ">=3.11"
+
+# Phase 0 pins only what the scaffold actually runs. Engine deps (chromadb,
+# sentence-transformers, anthropic) land in Phase 1 so the scaffold stays fast
+# to install and its failures stay easy to read.
+dependencies = [
+    "fastapi==0.140.13",
+    "uvicorn[standard]==0.38.0",
+    "pydantic==2.12.4",
+    "pydantic-settings==2.13.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.1",
+    # Starlette's TestClient wants httpx2 now; httpx 0.28 still works but warns.
+    "httpx2==2.9.1",
+    "ruff==0.14.5",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["core*", "implementations*", "api*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100

@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets — never commit real env files
+.env
+.env.local
+
+# Node / Next
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+
+# Data written at runtime (Phase 1+)
+backend/.chroma/
+backend/*.db
+
+# OS
+.DS_Store
