@@ -1,7 +1,5 @@
 """GET /api/techniques — the catalog the home page renders its cards from."""
 
-from __future__ import annotations
-
 from fastapi import APIRouter
 
 from api.schemas import Technique

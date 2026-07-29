@@ -5,8 +5,6 @@ pipelines in implementations/. Keeping that boundary is what makes /api/compare
 cheap to build later.
 """
 
-from __future__ import annotations
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

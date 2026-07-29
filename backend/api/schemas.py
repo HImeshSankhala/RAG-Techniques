@@ -4,8 +4,6 @@ These are the source of truth. `frontend/lib/api.ts` mirrors them by hand; when 
 schema changes here, that file changes too or the frontend is lying about the API.
 """
 
-from __future__ import annotations
-
 from pydantic import BaseModel, Field
 
 

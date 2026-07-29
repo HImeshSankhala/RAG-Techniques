@@ -1,7 +1,5 @@
 """Phase 0 smoke tests: the scaffold boots and the catalog endpoint holds its contract."""
 
-from __future__ import annotations
-
 from fastapi.testclient import TestClient
 
 from api.main import app
