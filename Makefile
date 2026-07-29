@@ -1,8 +1,9 @@
 .PHONY: setup dev dev-backend dev-frontend index test lint
 
-# Python 3.11+ required. Override if your interpreter lives elsewhere:
+# Python 3.11+ required. Full path, not bare `python3.12`, because an Anaconda
+# install earlier on PATH would otherwise shadow the Homebrew one. Override with:
 #   make setup PYTHON=/usr/local/bin/python3.12
-PYTHON ?= /opt/anaconda3/bin/python3.12
+PYTHON ?= /opt/homebrew/bin/python3.12
 VENV := backend/.venv
 PY := $(VENV)/bin/python
 
