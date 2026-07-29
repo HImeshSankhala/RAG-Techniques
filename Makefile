@@ -28,7 +28,7 @@ dev-frontend:
 	cd frontend && npm run dev
 
 index:
-	@echo "make index lands in Phase 1 (ingest data/sample_docs into Chroma)." && exit 1
+	cd backend && .venv/bin/python -m core.index
 
 test:
 	cd backend && .venv/bin/python -m pytest

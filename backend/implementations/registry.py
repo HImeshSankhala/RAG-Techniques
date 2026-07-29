@@ -1,19 +1,21 @@
 """Single source of truth for which techniques exist and which ones can run.
 
-Phase 0 has no pipeline classes yet, so the registry holds metadata only and every
-technique reports ``implemented=False``. From Phase 1 on, a technique graduates by
-adding its pipeline instance to ``PIPELINES`` — one line — and ``implemented`` flips
-to True automatically because it is derived, never hand-maintained. That derivation is
-the whole point: a hand-kept boolean is a second source of truth waiting to drift from
-the first.
+A technique graduates by adding its pipeline instance to ``PIPELINES`` — one line —
+and ``implemented`` flips to True automatically because it is derived, never
+hand-maintained. That derivation is the whole point: a hand-kept boolean is a second
+source of truth waiting to drift from the first.
 """
 
 from dataclasses import dataclass
-from typing import Any
 
-# Populated from Phase 1: {"standard-rag": StandardRAG(), ...}
-# Typed Any for now — importing core.pipeline before it exists would break the API.
-PIPELINES: dict[str, Any] = {}
+from core.pipeline import RAGPipeline
+from implementations.standard_rag import StandardRAG
+
+# A technique becomes runnable by appearing here — one line. `implemented` on the
+# API is derived from membership, so there is no second place to remember.
+PIPELINES: dict[str, RAGPipeline] = {
+    StandardRAG.name: StandardRAG(),
+}
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,20 @@ def list_techniques() -> list[tuple[TechniqueInfo, bool]]:
     """Every technique in catalog order, paired with whether it has a runnable pipeline.
 
     Exists so the API layer never has to know PIPELINES exists — asking "can this run?"
-    is an engine question. Phase 1 adds a lookup-by-name here when /api/run needs one.
+    is an engine question.
     """
     return [(t, t.name in PIPELINES) for t in CATALOG]
+
+
+def get_pipeline(name: str) -> RAGPipeline | None:
+    """The runnable pipeline for a slug, or None if unknown or docs-only."""
+    return PIPELINES.get(name)
+
+
+def is_known(name: str) -> bool:
+    """Whether the slug is in the catalog at all.
+
+    Lets /api/run tell "no such technique" apart from "that one isn't built yet",
+    which are different mistakes and deserve different messages.
+    """
+    return any(t.name == name for t in CATALOG)

@@ -8,7 +8,7 @@ cheap to build later.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import techniques
+from api.routes import run, techniques
 from core.config import settings
 
 app = FastAPI(
@@ -26,6 +26,7 @@ app.add_middleware(
 )
 
 app.include_router(techniques.router)
+app.include_router(run.router)
 
 
 @app.get("/api/health", tags=["health"])

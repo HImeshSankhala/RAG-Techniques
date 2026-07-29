@@ -4,14 +4,16 @@ version = "0.1.0"
 description = "RAG Lab — FastAPI API + RAG engine for 9 retrieval-augmented generation techniques"
 requires-python = ">=3.11"
 
-# Phase 0 pins only what the scaffold actually runs. Engine deps (chromadb,
-# sentence-transformers, anthropic) land in Phase 1 so the scaffold stays fast
-# to install and its failures stay easy to read.
 dependencies = [
     "fastapi==0.140.13",
     "uvicorn[standard]==0.38.0",
     "pydantic==2.12.4",
     "pydantic-settings==2.13.1",
+    # Engine (Phase 1). sentence-transformers pulls in torch, which is most of the
+    # install time and disk footprint — the price of embedding locally for free.
+    "anthropic==0.116.0",
+    "chromadb==1.3.0",
+    "sentence-transformers==5.1.2",
 ]
 
 [project.optional-dependencies]
