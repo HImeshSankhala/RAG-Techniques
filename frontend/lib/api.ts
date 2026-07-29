@@ -5,7 +5,7 @@
  * truth. If a Pydantic model changes there, change it here in the same commit.
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /** Mirrors `api.schemas.Technique`. */
 export interface Technique {
@@ -15,47 +15,27 @@ export interface Technique {
   implemented: boolean;
 }
 
-/** Thrown when the API is unreachable or answers with a non-2xx status. */
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
-
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * GET /api/techniques — every technique, with `implemented` telling you what can run.
+ *
+ * Throws an Error the UI can show verbatim. `cache: "no-store"` is load-bearing: the
+ * App Router caches server-side fetches by default, which would pin this page to a
+ * stale catalog once a technique becomes runnable.
+ */
+export async function getTechniques(): Promise<Technique[]> {
   let response: Response;
 
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      // The catalog is small and changes as techniques land, so never serve a stale
-      // copy in dev. Revisit if this page is ever statically generated.
-      cache: "no-store",
-      ...init,
-      headers: { "Content-Type": "application/json", ...init?.headers },
-    });
-  } catch (cause) {
-    throw new ApiError(
-      `Could not reach the API at ${API_BASE_URL}. Is the backend running?`,
-    );
+    response = await fetch(`${API_BASE_URL}/api/techniques`, { cache: "no-store" });
+  } catch {
+    throw new Error(`Could not reach the API at ${API_BASE_URL}. Is the backend running?`);
   }
 
   if (!response.ok) {
-    throw new ApiError(
-      `GET ${path} failed with ${response.status} ${response.statusText}`,
-      response.status,
+    throw new Error(
+      `GET /api/techniques failed with ${response.status} ${response.statusText}`,
     );
   }
 
-  return (await response.json()) as T;
+  return (await response.json()) as Technique[];
 }
-
-/** GET /api/techniques — every technique, with `implemented` telling you what can run. */
-export function getTechniques(): Promise<Technique[]> {
-  return apiFetch<Technique[]>("/api/techniques");
-}
-
-export { API_BASE_URL };

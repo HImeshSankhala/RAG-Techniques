@@ -8,8 +8,6 @@ the whole point: a hand-kept boolean is a second source of truth waiting to drif
 the first.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Any
 
@@ -77,14 +75,11 @@ CATALOG: tuple[TechniqueInfo, ...] = (
     ),
 )
 
-_BY_NAME: dict[str, TechniqueInfo] = {t.name: t for t in CATALOG}
-
 
 def list_techniques() -> list[tuple[TechniqueInfo, bool]]:
-    """Every technique in catalog order, paired with whether it has a runnable pipeline."""
+    """Every technique in catalog order, paired with whether it has a runnable pipeline.
+
+    Exists so the API layer never has to know PIPELINES exists — asking "can this run?"
+    is an engine question. Phase 1 adds a lookup-by-name here when /api/run needs one.
+    """
     return [(t, t.name in PIPELINES) for t in CATALOG]
-
-
-def get_info(name: str) -> TechniqueInfo | None:
-    """Catalog entry for a slug, or None if the slug is unknown."""
-    return _BY_NAME.get(name)

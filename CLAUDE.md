@@ -48,3 +48,25 @@ Keep explanations concise but real.
    Write it for someone who knows the previous phase but not this one.
 5. FLAG DON'T SILENTLY DECIDE. If the plan is ambiguous or you'd deviate from it,
    pause and ask rather than guessing.
+
+## Minimalism — write the least code that fully works (ponytail-style)
+Default to the simplest solution that satisfies the requirement. Before writing code, ask
+"what is the smallest thing that works?" and build that.
+- YAGNI: build only what THIS phase needs. No speculative features, options, or config
+  for hypothetical futures.
+- Stdlib / built-ins first. Reach for a library or a new dependency only when the stdlib
+  or the framework's native feature genuinely can't do it. Prefer a native HTML input over
+  a custom component; prefer a plain function over a class hierarchy.
+- No unrequested abstractions. Don't add layers, wrappers, factories, or generic
+  "frameworks" unless the plan asks for them or duplication actually demands it
+  (rule of three: abstract on the third repetition, not the first).
+- Shorter is better WHEN it's also clearer. Delete dead code, collapse needless
+  indirection. But never sacrifice correctness or readability just to cut lines.
+
+## Reconciling minimalism with the abstractions this plan DOES want
+The core/ layer and the RAGPipeline interface are deliberate, plan-mandated abstractions —
+they exist because 8+ techniques genuinely share infra (rule of three is satisfied many
+times over). Implement them. Minimalism means "no abstractions BEYOND what's justified,"
+not "no abstractions." If you think a plan-specified abstraction isn't earning its keep,
+FLAG it (Guardrail 5) with your reasoning rather than silently skipping it — that trade-off
+discussion is a learning goal, not an obstacle.

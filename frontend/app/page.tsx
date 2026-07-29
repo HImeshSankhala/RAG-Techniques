@@ -1,5 +1,5 @@
 import { TechniqueCard } from "@/components/TechniqueCard";
-import { API_BASE_URL, ApiError, getTechniques, type Technique } from "@/lib/api";
+import { API_BASE_URL, getTechniques, type Technique } from "@/lib/api";
 
 // Server Component: the fetch happens on the server, so the browser never sees a
 // loading flash and the API URL stays a server concern.
@@ -12,7 +12,7 @@ export default async function HomePage() {
   } catch (cause) {
     // Deliberately no hardcoded fallback list — a silent fallback would hide a dead
     // backend behind a page that looks fine.
-    error = cause instanceof ApiError ? cause.message : "Unknown error loading techniques.";
+    error = cause instanceof Error ? cause.message : "Unknown error loading techniques.";
   }
 
   return (

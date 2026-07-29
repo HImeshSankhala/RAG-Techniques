@@ -64,15 +64,21 @@ everything else from it.
 
 ## Algorithms
 
-None yet — that's the point of a scaffold. The relevant complexity here is
-**dictionary lookup**: `registry.get_info(name)` is a hash-map lookup, O(1) average,
-O(n) worst case under adversarial collisions, with O(n) space for n techniques. The
-alternative — scanning the catalog tuple linearly, O(n) per lookup — is genuinely fine
-at n=9, and I built `_BY_NAME` anyway only because `/api/run` will do this lookup on
-every request from Phase 1 onward.
+None yet — that's the point of a scaffold. The only complexity here is
+`list_techniques()`: one pass over the catalog, with a hash-map membership test
+(`name in PIPELINES`) per entry. O(n) time, O(n) space, n = 9.
 
-Worth being honest about: at n=9, this choice is unmeasurable. It's the habit that
-matters, not the microseconds.
+**A YAGNI lesson, learned the hard way in this very phase.** The first version also
+carried a `_BY_NAME` dict and a `get_info(name)` lookup — O(1) instead of an O(n) scan —
+built because `/api/run` will need lookup-by-name from Phase 1. Nothing in Phase 0
+called it. That's speculative work justified by a speculative benchmark: at n=9, the
+difference between a hash lookup and a linear scan is unmeasurable, and the "habit" I
+told myself I was building was really just code with no caller and no test exercising it.
+
+It got deleted. Phase 1 will add lookup-by-name when Phase 1 has a caller for it, and at
+that point the O(1)-vs-O(n) question can be answered against a real access pattern
+instead of an imagined one. **Knowing the complexity of a design is not a reason to build
+it yet.**
 
 ## Failure mode: the silent fallback
 

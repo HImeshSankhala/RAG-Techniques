@@ -1,7 +1,5 @@
 """Runtime settings, loaded from backend/.env (see .env.example)."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,9 +13,6 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
-
-    # Blank until Phase 1 needs an LLM. Kept optional so the scaffold boots without a key.
-    anthropic_api_key: str = ""
 
     cors_origins: str = "http://localhost:3000"
 
