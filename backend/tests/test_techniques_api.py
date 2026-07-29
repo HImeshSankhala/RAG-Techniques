@@ -42,7 +42,30 @@ def test_slugs_are_unique_and_url_safe() -> None:
         assert all(char.isalnum() or char == "-" for char in name)
 
 
-def test_nothing_is_implemented_yet() -> None:
-    """Phase 0 ships no pipelines. This test should be updated in Phase 1, not deleted."""
+def test_implemented_flag_tracks_the_registry() -> None:
+    """`implemented` is derived from PIPELINES — this asserts the derivation holds.
+
+    Extend the expected set as each phase lands a technique; a mismatch here means
+    the catalog and the registry have drifted apart.
+    """
     body = client.get("/api/techniques").json()
-    assert all(entry["implemented"] is False for entry in body)
+    runnable = {entry["name"] for entry in body if entry["implemented"]}
+
+    assert runnable == {"standard-rag"}
+
+
+def test_run_rejects_an_unknown_technique() -> None:
+    response = client.post("/api/run", json={"technique": "no-such-rag", "query": "hi"})
+    assert response.status_code == 404
+
+
+def test_run_distinguishes_docs_only_from_unknown() -> None:
+    """A documented-but-unbuilt technique is a different mistake than a typo."""
+    response = client.post("/api/run", json={"technique": "graph-rag", "query": "hi"})
+    assert response.status_code == 409
+    assert "not yet runnable" in response.json()["detail"]
+
+
+def test_run_rejects_an_empty_query() -> None:
+    response = client.post("/api/run", json={"technique": "standard-rag", "query": ""})
+    assert response.status_code == 422

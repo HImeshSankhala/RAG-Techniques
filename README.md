@@ -9,7 +9,17 @@ write-ups of what each phase taught.
 
 ## Status
 
-Phase 0 (scaffold) complete. All 9 techniques are listed; none are runnable yet.
+Phase 1 complete. Standard RAG runs end-to-end; the other 8 techniques are listed
+but not yet implemented.
+
+Answer generation needs an Anthropic API key:
+
+```bash
+cp backend/.env.example backend/.env   # then add your key
+```
+
+Without one, retrieval still works and `POST /api/run` returns a 503 explaining
+the setup step.
 
 ## Quickstart
 
@@ -37,7 +47,7 @@ make setup PYTHON=/path/to/python3.12
 | `make dev` | Backend on :8000 + frontend on :3000 |
 | `make test` | pytest |
 | `make lint` | ruff + eslint + tsc |
-| `make index` | Ingest `backend/data/sample_docs` into Chroma (Phase 1) |
+| `make index` | Ingest `backend/data/sample_docs` into Chroma (run before first use) |
 
 ## Dependency notes
 
