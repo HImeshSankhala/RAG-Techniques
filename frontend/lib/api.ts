@@ -19,8 +19,9 @@ export interface Technique {
  * GET /api/techniques — every technique, with `implemented` telling you what can run.
  *
  * Throws an Error the UI can show verbatim. `cache: "no-store"` is load-bearing: the
- * App Router caches server-side fetches by default, which would pin this page to a
- * stale catalog once a technique becomes runnable.
+ * default ("auto no cache") lets Next statically prerender this route and bake the
+ * catalog in at build time, which would pin the page to a stale list the moment a
+ * technique becomes runnable. `no-store` forces the route to stay dynamic.
  */
 export async function getTechniques(): Promise<Technique[]> {
   let response: Response;

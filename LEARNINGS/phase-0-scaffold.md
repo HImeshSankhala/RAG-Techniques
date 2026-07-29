@@ -100,13 +100,17 @@ diagnosis into a thirty-minute one.** Degrade visibly, not silently.
 
 ### A second, quieter failure mode
 
-`fetch(..., { cache: "no-store" })` is doing load-bearing work. Next.js 14's App Router
-caches `fetch` in Server Components by default, and the default is aggressive enough that
-without `no-store` the home page would serve a snapshot of the catalog taken at build
-time. You'd land Phase 1, flip `standard-rag` to runnable, reload — and see "Docs only",
-with nothing in the logs to explain it. The framework's default is tuned for content that
-rarely changes; this catalog changes on exactly the cadence that the project makes
-progress.
+`fetch(..., { cache: "no-store" })` is doing load-bearing work. The App Router's default
+(`auto no cache`) lets Next statically prerender a route and resolve its fetches **once,
+at build time**. Without `no-store`, the home page would ship a snapshot of the catalog
+frozen at whenever you last built. You'd land Phase 1, flip `standard-rag` to runnable,
+reload — and see "Docs only", with nothing in the logs to explain it. `no-store` opts the
+route into being dynamic, so it re-fetches per request.
+
+The framework's default is tuned for content that rarely changes; this catalog changes on
+exactly the cadence that the project makes progress. Worth internalizing as a general
+habit: **know which of your framework's defaults assume your data is static**, because
+those are the ones that fail silently rather than loudly.
 
 ## What "done" meant here
 
