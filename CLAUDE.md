@@ -18,7 +18,8 @@ ONE phase at a time, in order, and stop for review after each.
 - Python 3.11+, full type hints; TS strict mode.
 - Conventional commits (feat:, fix:, docs:, refactor:, test:).
 - Every pipeline: pytest smoke test against data/sample_docs.
-- Keep costs low: local embeddings, small sample docs, small model for router calls.
+- Keep costs low: local embeddings, local LLM by default, small sample docs.
+- Commands: `make index` before first run; Ollama must be running for the default backend.
 
 ## Commands
 - make dev      # backend :8000 + frontend :3000
@@ -31,6 +32,16 @@ The repo owner is learning system design and DSA. When implementing, explain:
 - WHY this design (trade-offs: latency, cost, complexity, failure modes)
 - Any algorithm used (e.g., RRF, BM25, top-k) — what it optimizes and its complexity
 Keep explanations concise but real.
+
+## Cost safety (NON-NEGOTIABLE — $5 Anthropic ceiling)
+- Default backend is ollama. Never make an Anthropic call unless the request explicitly
+  selects it.
+- Anthropic model is HAIKU ONLY, enforced by an allowlist in config. Never wire Opus/Sonnet.
+- Every paid call caps max_tokens (≤512 answers, ≤256 helper calls) and honors iteration caps.
+- core/llm.py tracks estimated spend to backend/.usage.json and exposes GET /api/usage.
+- Secrets only from gitignored .env; commit .env.example with blank placeholders. Never print
+  or commit a key.
+- Ollama backend must set num_ctx (default 8192) — the 2048 default silently truncates RAG prompts.
 
 ## Guardrails (apply to EVERY phase — no reminder needed)
 1. ONE PHASE AT A TIME. When told "do Phase N", implement only Phase N.

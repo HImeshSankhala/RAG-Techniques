@@ -9,6 +9,22 @@ A full-stack learning website for 9 RAG techniques: **read** about each one, **t
 
 ---
 
+## Prerequisites (one-time, on your machine — not built by Claude Code)
+
+- **Ollama** installed and running.
+- **Pull an ~8B local model** (fits both an M2 Pro 16GB and an 8GB RTX 3070, so results are
+  reproducible across machines). Recommended exact tag: `ollama pull qwen3:8b` (~5GB Q4).
+  **Do NOT use `qwen3.6` or `gemma4:12b`** — those are 12B–35B and won't fit the 8GB laptop.
+  Whatever you pull, set `OLLAMA_MODEL` in `.env` to match.
+- **Verify:** `ollama list` shows the model; `ollama run qwen3:8b "hi"` replies.
+- **Anthropic API key (optional, for the compare view only):** create a key at the Claude
+  Console, put it in `backend/.env` as `ANTHROPIC_API_KEY`. **Set a Console spend limit ≤ $5
+  and keep auto-reload OFF** — with prepaid credit and auto-reload off, the API physically
+  cannot exceed your $5. This is the real hard cap; the software guardrails below just make
+  the $5 last.
+
+---
+
 ## Architecture Overview
 
 ```
@@ -40,7 +56,8 @@ A full-stack learning website for 9 RAG techniques: **read** about each one, **t
 | Content | MDX files (one per technique) | Write docs in markdown, embed interactive components |
 | Backend | FastAPI + Pydantic | Auto-generated OpenAPI docs; Pydantic models = typed contract with frontend |
 | RAG engine | Python: `core/` module + technique classes | Strategy pattern |
-| LLM | Anthropic API via thin wrapper in `core/llm.py` | Provider-swappable |
+| LLM (default) | **Ollama, local — tag `qwen3:8b`** | Free and uncapped; the default for every technique. *qwen3.6 / gemma4:12b are 12B–35B and won't fit an 8GB GPU — use an 8B tag.* |
+| LLM (opt-in) | **Anthropic Haiku only**, via the same `core/llm.py` | Paid "strong model" for the compare/drift demo. Allowlisted — Opus/Sonnet are never callable. |
 | Embeddings | sentence-transformers (local) | Free while learning |
 | Vector store | ChromaDB (embedded) | Zero infra; swappable later |
 | Graph (Graph RAG) | NetworkX in-memory | Start simple |
@@ -119,11 +136,22 @@ rag-lab/
 ```python
 # backend/core/pipeline.py
 @dataclass
+class Metadata:                        # fixed fields — the compare diff row lines these up
+    model: str; backend: str
+    latency_ms: float
+    llm_calls: int
+    retrieval_passes: int
+    tokens_in: int; tokens_out: int
+    termination_reason: str            # "single_pass" | "gaps_closed" | "max_iterations" | ...
+    groundedness: float                # fraction of retrieved sources cited (compliance proxy)
+    cost_estimate_usd: float           # 0.0 on the local backend
+
+@dataclass
 class RAGResult:
     answer: str
     retrieved_chunks: list[Chunk]      # text + source + score
     steps: list[Step]                  # [{name, detail, duration_ms}] — powers UI trace
-    metadata: dict                     # latency_ms, llm_calls, tokens, passes
+    metadata: Metadata
 
 class RAGPipeline(ABC):
     name: str          # "fusion-rag" (slug, matches MDX filename)
@@ -131,17 +159,55 @@ class RAGPipeline(ABC):
     tagline: str       # one-liner for cards
 
     @abstractmethod
-    def run(self, query: str) -> RAGResult: ...
+    def run(self, query: str, model: str | None = None) -> RAGResult: ...
+    # `model` overrides the default for one call — this is what powers
+    # same-technique/different-model (local vs Haiku) drift in the compare view.
 ```
 
 ### API contract (mirrored in frontend/lib/api.ts)
 
 - `GET  /api/techniques` → `[{name, display_name, tagline, implemented: bool}]`
-- `POST /api/run`        → `{technique, query}` → `RunResponse` (RAGResult + technique name)
-- `POST /api/compare`    → `{technique_a, technique_b, query}` → `{a: RunResponse, b: RunResponse}`
+- `GET  /api/models`     → `[{id, display_name, backend, is_paid, is_default, available, note}]`
+- `GET  /api/usage`      → `{spend_estimate_usd, calls, session_calls, session_call_limit}`
+- `POST /api/run`        → `{technique, query, model?}` → `RunResponse` (RAGResult + technique name)
+- `POST /api/compare`    → two `(technique × model)` sides → `{a: RunResponse, b: RunResponse}`
+  Supports same-model/different-technique AND same-technique/different-model (drift).
+  The diff row is built from the `Metadata` fields.
 - `POST /api/feedback`   → `{technique, query, chunk_ids, rating}` → `{ok: true}`
 
 **Why `steps` matters:** every pipeline logs its stages ("Embedded query — 12ms", "Retrieved 5 chunks", "Pass 2: found gaps: [dates]"). The frontend renders this as a trace timeline. In compare mode, seeing Standard RAG's 3 steps next to Multi-Pass's 9 steps IS the lesson.
+
+---
+
+## Cost Guardrails — protect the $5 Anthropic ceiling
+
+These are correctness requirements, not suggestions. The goal: it is *impossible* to
+accidentally burn money.
+
+1. **Local is the default backend everywhere.** `LLM_BACKEND=ollama` by default. Haiku is
+   used only when a request explicitly asks for it (playground/compare model selector).
+2. **Haiku-only allowlist.** `core/config.py` defines `ANTHROPIC_MODEL` and MUST reject any
+   value that isn't a Haiku model. Opus/Sonnet are never callable from this project — a
+   single expensive call could eat a large chunk of $5. Fail loudly at startup if misconfigured.
+3. **Output cap.** Every Anthropic call sets `max_tokens` ≤ 512 for answers (≤ 256 for
+   router/critique calls). Output tokens are the expensive side; cap them hard.
+4. **Input cap.** Keep retrieval `top_k` small (≤ 5) and truncate each chunk; never stuff
+   huge context into a paid call.
+5. **Iteration caps on paid calls.** Multi-Pass ≤ 3 passes, Agentic ≤ 4 iterations — ALREADY
+   required, but on the Anthropic backend these caps are a spend guarantee, not just latency.
+   An uncapped agent loop on a paid model is the #1 way to drain credit.
+6. **Spend meter.** `core/llm.py` estimates $ per Anthropic call from token counts (Haiku
+   input/output rates in config) and accumulates a running total to `backend/.usage.json`
+   (gitignored). Expose `GET /api/usage` → `{spend_estimate_usd, calls}`; show it as a small
+   badge in the UI. This is a rough local estimate, NOT your bill — the Console spend limit
+   is the real cap — but it lets you watch burn in real time.
+7. **Dev safety valve.** `ANTHROPIC_MAX_SESSION_CALLS` (default 50) makes the Anthropic
+   backend refuse further paid calls once exceeded in a run, so a stuck loop during
+   development can't quietly rack up calls. Local (Ollama) is never capped — it's free.
+
+Budget reality check: Haiku is ~$0.004 per single-call query, so $5 is roughly 400–1000+
+queries even with Multi-Pass. The danger isn't normal use — it's an accident (a loop, or a
+wrong model). The guardrails above remove those accidents.
 
 ---
 
@@ -156,6 +222,12 @@ Each phase ends demo-able. Do not start N+1 until N runs.
 
 ### Phase 1 — Engine: core + Standard RAG
 - `core/` modules; ingest sample docs into Chroma (`make index`)
+- `llm.py` has TWO backends behind one `generate()`: Ollama (default, free) and
+  Anthropic Haiku (opt-in, capped). **REQUIRED:** the Ollama backend must pass
+  `num_ctx` = 8192 (configurable `OLLAMA_NUM_CTX`). Ollama's default context is 2048
+  tokens, which SILENTLY TRUNCATES RAG prompts — the model never sees some retrieved
+  context and answers confidently anyway. This is a silent-failure bug, not a nicety:
+  treat it as a correctness requirement and note it in LEARNINGS.
 - `StandardRAG` implementing the ABC, registered in `registry.py`
 - pytest smoke test
 - **Done when:** `POST /api/run {"technique":"standard-rag", ...}` returns grounded answer with chunks + steps.
@@ -205,9 +277,13 @@ Each phase ends demo-able. Do not start N+1 until N runs.
 - Thumbs up/down on chunks → SQLite → future rankings boost/demote (simple weight)
 - **Learning focus:** online feedback loops; why naive boosting can create filter bubbles.
 
-### Phase 12 — REALM page + polish
+### Phase 12 — REALM page + Showcase (GIFs first)
 - REALM learn page (why it can't run locally; paper link)
-- README with screenshots; comparison table on home page; deploy notes (Vercel + Fly.io/Railway) — optional
+- `.env.example` with blank placeholders; stranger-followable README quickstart
+- **Demo GIFs as the README headline:** playground, compare divergence, local-vs-Haiku drift
+- Comparison table on home page
+- Deploy notes: the local model doesn't deploy — flip `LLM_BACKEND=anthropic` via host
+  secrets, or ship frontend + GIFs only, or bring-your-own-key
 
 ---
 
@@ -247,6 +323,16 @@ The repo owner is learning system design and DSA. When implementing, explain:
 - WHY this design (trade-offs: latency, cost, complexity, failure modes)
 - Any algorithm used (e.g., RRF, BM25, top-k) — what it optimizes and its complexity
 Keep explanations concise but real.
+
+## Cost safety (NON-NEGOTIABLE — $5 Anthropic ceiling)
+- Default backend is ollama. Never make an Anthropic call unless the request explicitly
+  selects it.
+- Anthropic model is HAIKU ONLY, enforced by an allowlist in config. Never wire Opus/Sonnet.
+- Every paid call caps max_tokens (≤512 answers, ≤256 helper calls) and honors iteration caps.
+- core/llm.py tracks estimated spend to backend/.usage.json and exposes GET /api/usage.
+- Secrets only from gitignored .env; commit .env.example with blank placeholders. Never print
+  or commit a key.
+- Ollama backend must set num_ctx (default 8192) — the 2048 default silently truncates RAG prompts.
 
 ## Guardrails (apply to EVERY phase — no reminder needed)
 1. ONE PHASE AT A TIME. When told "do Phase N", implement only Phase N.

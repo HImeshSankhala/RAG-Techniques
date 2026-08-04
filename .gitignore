@@ -16,9 +16,10 @@ node_modules/
 next-env.d.ts
 *.tsbuildinfo
 
-# Data written at runtime (Phase 1+)
+# Data written at runtime
 backend/.chroma/
 backend/*.db
+backend/.usage.json
 
 # OS
 .DS_Store
