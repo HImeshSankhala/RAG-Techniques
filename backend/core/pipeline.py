@@ -40,13 +40,45 @@ class Step:
 
 
 @dataclass
+class Metadata:
+    """The numbers the compare view diffs one run against another on.
+
+    A fixed set of fields rather than a free dict: the diff row has to line up
+    two runs field by field, and it cannot do that if each technique invents its
+    own keys. Techniques that measure nothing for a field leave the default —
+    Standard RAG always reports one retrieval pass, and that zero-variance value
+    is exactly what makes Multi-Pass's three legible next to it.
+    """
+
+    model: str = ""
+    backend: str = ""
+    latency_ms: float = 0.0
+    llm_calls: int = 0
+    retrieval_passes: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+
+    # Why the pipeline stopped. Trivial here ("single_pass"); the interesting
+    # values arrive with the loops in Phases 6 and 9.
+    termination_reason: str = ""
+
+    # Fraction of retrieved sources the answer actually cited, 0.0–1.0.
+    # A citation-compliance proxy, NOT a factual-accuracy measure — see the
+    # note in implementations/standard_rag.py.
+    groundedness: float = 0.0
+
+    # Estimated USD for paid backends; 0.0 on local.
+    cost_estimate_usd: float = 0.0
+
+
+@dataclass
 class RAGResult:
     """What every pipeline returns, regardless of how it retrieved."""
 
     answer: str
     retrieved_chunks: list[Chunk] = field(default_factory=list)
     steps: list[Step] = field(default_factory=list)
-    metadata: dict = field(default_factory=dict)
+    metadata: Metadata = field(default_factory=Metadata)
 
 
 class StepRecorder:
@@ -106,5 +138,10 @@ class RAGPipeline(ABC):
     tagline: str
 
     @abstractmethod
-    def run(self, query: str) -> RAGResult:
-        """Answer `query`, recording every stage in the returned result's `steps`."""
+    def run(self, query: str, model: str | None = None) -> RAGResult:
+        """Answer `query`, recording every stage in the returned result's `steps`.
+
+        `model` overrides the configured default for this call, which is what
+        lets the compare view run one technique on two models side by side and
+        show where a small local model and a stronger hosted one diverge.
+        """

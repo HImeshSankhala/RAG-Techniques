@@ -35,9 +35,54 @@ class Step(BaseModel):
     duration_ms: float
 
 
+class Metadata(BaseModel):
+    """Mirrors `core.pipeline.Metadata`. The compare view diffs runs on these."""
+
+    model: str
+    backend: str
+    latency_ms: float
+    llm_calls: int
+    retrieval_passes: int
+    tokens_in: int
+    tokens_out: int
+    termination_reason: str
+    groundedness: float = Field(
+        description="Fraction of retrieved sources cited. Compliance proxy, not accuracy."
+    )
+    cost_estimate_usd: float = Field(description="Estimated USD; 0.0 on the local backend.")
+
+
+class ModelInfo(BaseModel):
+    """One selectable model in GET /api/models."""
+
+    id: str
+    display_name: str
+    backend: str = Field(description="'ollama' (local, free) or 'anthropic' (paid).")
+    is_paid: bool
+    is_default: bool
+    available: bool = Field(description="False when the backend is not configured.")
+    note: str = ""
+
+
+class UsageResponse(BaseModel):
+    """GET /api/usage — running estimate of Anthropic spend."""
+
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    spend_estimate_usd: float
+    session_calls: int = Field(description="Paid calls since the server started.")
+    session_call_limit: int
+    note: str = "Local list-price estimate, not your bill. The Console spend limit is the cap."
+
+
 class RunRequest(BaseModel):
     technique: str = Field(description="Technique slug, e.g. 'standard-rag'.")
     query: str = Field(min_length=1, max_length=2000)
+    model: str | None = Field(
+        default=None,
+        description="Model id from GET /api/models. Omit to use the configured default.",
+    )
 
 
 class RunResponse(BaseModel):
@@ -48,6 +93,4 @@ class RunResponse(BaseModel):
     answer: str
     retrieved_chunks: list[Chunk]
     steps: list[Step]
-    metadata: dict = Field(
-        description="latency_ms, llm_calls, token counts — varies by technique."
-    )
+    metadata: Metadata

@@ -29,18 +29,24 @@ def stub_llm(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """Replace the LLM call, capturing the prompt so we can assert on grounding."""
     captured: list[str] = []
 
-    def fake_complete(system: str, user: str) -> LLMResponse:
+    def fake_generate(system: str, user: str, model=None, **kwargs) -> LLMResponse:
         captured.append(user)
-        return LLMResponse(text="Stubbed answer.", input_tokens=100, output_tokens=20)
+        return LLMResponse(
+            text="Stubbed answer citing dynamo.md.",
+            input_tokens=100,
+            output_tokens=20,
+            model=model or "stub-model",
+            backend="ollama",
+        )
 
-    monkeypatch.setattr(llm, "complete", fake_complete)
+    monkeypatch.setattr(llm, "generate", fake_generate)
     return captured
 
 
 def test_run_returns_a_populated_result(stub_llm: list[str]) -> None:
     result = StandardRAG().run(QUERY)
 
-    assert result.answer == "Stubbed answer."
+    assert result.answer == "Stubbed answer citing dynamo.md."
     assert result.retrieved_chunks, "retrieved nothing"
     assert result.steps, "recorded no steps"
 
@@ -80,10 +86,14 @@ def test_steps_trace_covers_the_three_stages(stub_llm: list[str]) -> None:
 def test_metadata_reports_cost_and_latency(stub_llm: list[str]) -> None:
     metadata = StandardRAG().run(QUERY).metadata
 
-    assert metadata["llm_calls"] == 1
-    assert metadata["latency_ms"] > 0
-    assert metadata["input_tokens"] == 100
-    assert metadata["output_tokens"] == 20
+    assert metadata.llm_calls == 1
+    assert metadata.retrieval_passes == 1
+    assert metadata.latency_ms > 0
+    assert metadata.tokens_in == 100
+    assert metadata.tokens_out == 20
+    assert metadata.termination_reason == "single_pass"
+    # Local backend is free; the paid path is what carries a cost.
+    assert metadata.cost_estimate_usd == 0.0
 
 
 def test_registered_under_its_slug() -> None:

@@ -1,10 +1,21 @@
-"""Runtime settings, loaded from backend/.env (see .env.example)."""
+"""Runtime settings, loaded from backend/.env (see .env.example).
+
+Two LLM backends live here. Local (Ollama) is the default for everything; Anthropic
+is opt-in per request and restricted to Haiku by an allowlist that fails at startup.
+That asymmetry is deliberate — see PLAN.md "Cost Guardrails".
+"""
 
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
+
+# Only Haiku may ever be called. A single Opus request can cost more than a
+# thousand Haiku ones, so the guard is a substring check on the model id rather
+# than a fixed list — a future `claude-haiku-5` passes, `claude-opus-5` cannot.
+HAIKU_MARKER = "haiku"
 
 
 class Settings(BaseSettings):
@@ -16,29 +27,73 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:3000"
 
-    # Blank is a valid state: retrieval works without a key, only generation needs one.
-    # core/llm.py raises a clear error rather than letting the SDK fail obscurely.
+    # --- Backend selection -------------------------------------------------
+    # Local by default. Anthropic is reached only when a request names a Haiku
+    # model explicitly, never by falling through to it.
+    llm_backend: str = "ollama"
+
+    # --- Local backend -----------------------------------------------------
+    ollama_host: str = "http://localhost:11434"
+    ollama_model: str = "qwen3:8b"
+
+    # Ollama's default context is 2048 tokens. A RAG prompt (4 chunks + question)
+    # exceeds that, and Ollama truncates silently — the model simply never sees
+    # some of what was retrieved, and the answer looks plausible. This is a
+    # correctness setting, not a tuning knob.
+    ollama_num_ctx: int = 8192
+
+    # --- Anthropic backend (opt-in, paid) ----------------------------------
     anthropic_api_key: str = ""
-    answer_model: str = "claude-opus-5"
+    anthropic_model: str = "claude-haiku-4-5"
 
-    # Thinking counts against max_tokens on this model, so leave room for both.
-    answer_max_tokens: int = 4096
+    # Output tokens are the expensive side (5x input on Haiku), so they are capped
+    # hard rather than trusted to the prompt.
+    anthropic_max_tokens_answer: int = 512
+    anthropic_max_tokens_helper: int = 256
 
-    # Grounded answering from supplied context is not a deep-reasoning task, and the
-    # playground shows a latency badge. "low" keeps the trace responsive.
-    answer_effort: str = "low"
+    # Stops a stuck loop during development from quietly draining credit.
+    anthropic_max_session_calls: int = 50
 
-    # all-MiniLM-L6-v2: 384-dim, ~90MB, runs on CPU in milliseconds. Good enough to
-    # show retrieval differences between techniques, which is what this project needs.
+    # Haiku 4.5 list price, USD per million tokens. Used for the local estimate
+    # in .usage.json — the Console spend limit is the real cap.
+    anthropic_input_usd_per_mtok: float = 1.00
+    anthropic_output_usd_per_mtok: float = 5.00
+
+    # --- Retrieval ---------------------------------------------------------
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-
-    # ~1200 chars ≈ 300 tokens: large enough to hold a whole idea, small enough that
-    # top-k of them fits comfortably in a prompt. Overlap keeps a sentence that
-    # straddles a boundary retrievable from both sides.
     chunk_size: int = 1200
     chunk_overlap: int = 200
 
+    # Small on purpose: every chunk is prompt tokens, and on the paid backend
+    # that is money. 4 is enough to answer from this corpus.
     top_k: int = 4
+
+    # Truncate any single chunk before it reaches a paid call, so one oversized
+    # document cannot inflate an Anthropic request.
+    max_chunk_chars: int = 1500
+
+    @field_validator("anthropic_model")
+    @classmethod
+    def _reject_non_haiku(cls, value: str) -> str:
+        """Fail at import time rather than at first paid call.
+
+        A misconfigured model is the single most expensive mistake available in
+        this project, so it must be impossible to reach a request handler.
+        """
+        if HAIKU_MARKER not in value.lower():
+            raise ValueError(
+                f"ANTHROPIC_MODEL must be a Haiku model; got {value!r}. "
+                "Opus and Sonnet are not callable from this project — see the "
+                "$5 ceiling guardrails in PLAN.md."
+            )
+        return value
+
+    @field_validator("llm_backend")
+    @classmethod
+    def _known_backend(cls, value: str) -> str:
+        if value not in {"ollama", "anthropic"}:
+            raise ValueError(f"LLM_BACKEND must be 'ollama' or 'anthropic'; got {value!r}")
+        return value
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -51,6 +106,15 @@ class Settings(BaseSettings):
     @property
     def chroma_dir(self) -> Path:
         return BACKEND_ROOT / ".chroma"
+
+    @property
+    def usage_file(self) -> Path:
+        return BACKEND_ROOT / ".usage.json"
+
+    @property
+    def default_model(self) -> str:
+        """The model used when a request does not name one."""
+        return self.anthropic_model if self.llm_backend == "anthropic" else self.ollama_model
 
 
 settings = Settings()
