@@ -82,25 +82,37 @@ retrieved context, so the cap goes where the money is.
 ## The bug worth the whole update: `num_ctx`
 
 Ollama's default context window is **2048 tokens**. A RAG prompt is four retrieved
-chunks plus a system prompt plus a question — at this project's settings, ~1100 tokens,
-comfortably under. Raise `top_k` to 8, or `chunk_size` to 2000, and it isn't.
+chunks plus a system prompt plus a question — at this project's current settings that
+measures ~1082 tokens, comfortably under, so the bug does not bite today.
+
+That is worth stating plainly rather than glossing: at `top_k=4` and `chunk_size=1200`,
+`num_ctx=8192` changes nothing observable. It is insurance against the settings this
+project will actually reach — `top_k=8` puts the prompt at ~1770 tokens, and Fusion RAG
+(Phase 4) merges two retrievers' results into one prompt, which roughly doubles it. The
+value of fixing it now is that the failure is invisible when it arrives.
 
 What makes this dangerous is not that it truncates. It's *how*:
 
 ```
-num_ctx=512   prompt_eval_count=258    canary fact present in answer: False
-   -> "Project Codename: Dynamo (the system behind Amazon's DynamoDB)"
+prompt: 18902 chars (~4725 tokens), canary "SECRET_CODE: PLATYPUS-42" at the very front
 
-num_ctx=8192  prompt_eval_count=1101   canary fact present in answer: True
-   -> "Dynamo handles conflicting concurrent writes by using vector clocks..."
+num_ctx=2048   model actually saw 1026 of 4162 tokens   -> "NOT FOUND"
+num_ctx=8192   model actually saw 4162 of 4162 tokens   -> "PLATYPUS-42"
 ```
 
-That is a real measurement from this codebase, with a canary fact
-(`codename is BLUEHERON`) planted at the front of the prompt. At 512, Ollama processed
-258 of 1101 tokens, dropped the canary, and the model **invented a codename with total
-confidence**. No exception. No warning. No `truncated: true` in the response. The only
-evidence is `prompt_eval_count` being lower than the prompt you sent — a field nobody
-reads unless they already suspect the problem.
+That is a real measurement from this codebase, at Ollama's **actual default** of 2048 —
+not a contrived low value. All 18 indexed chunks were sent with a canary planted at the
+front, then the model was asked to read it back.
+
+Two details make this worse than ordinary truncation. First, at `num_ctx=2048` the model
+saw only **1026** tokens, not 2048 — Ollama reserves the rest of the window for
+generation, so the usable input is roughly half the number you configured. Second, and
+the real problem: **both runs returned HTTP 200 with a fluent, well-formed answer.** No
+exception, no warning, no `truncated: true` field. `NOT FOUND` is a perfectly reasonable
+sentence; nothing about the response says "you did not receive what you sent."
+
+The only external evidence is `prompt_eval_count` coming back lower than the prompt you
+believe you sent — a field nobody reads unless they already suspect the problem.
 
 This is the worst shape a bug can have in a RAG system, because RAG's whole proposition
 is *the model answers from the retrieved context*. Silent truncation breaks that
