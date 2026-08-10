@@ -9,22 +9,23 @@ write-ups of what each phase taught.
 
 ## Status
 
-Phase 1 complete. Standard RAG runs end-to-end; the other 8 techniques are listed
-but not yet implemented.
+Phase 2 complete. Standard RAG runs end-to-end from the browser at
+[`/playground`](http://localhost:3000/playground) — pick a technique and a model, ask a
+question, and see the answer alongside the passages it came from and a timing trace of
+every stage. The other 8 techniques are listed but not yet implemented.
 
-Answer generation needs an Anthropic API key:
-
-```bash
-cp backend/.env.example backend/.env   # then add your key
-```
-
-Without one, retrieval still works and `POST /api/run` returns a 503 explaining
-the setup step.
+**No API key required.** The default backend is a local model via Ollama, so everything
+above runs free. A hosted Haiku model is selectable per query if you add a key — see
+Models below.
 
 ## Quickstart
 
-Requires Python 3.11+ and **Node 22+** (ESLint 10 needs `>=22`; Node 21 is EOL and its
-missing `util.styleText` breaks ESLint's output formatter).
+Requires Python 3.11+, **Node 22+** (ESLint 10 needs `>=22`), and
+[Ollama](https://ollama.com) with an ~8B model pulled:
+
+```bash
+ollama pull qwen3:8b
+```
 
 ```bash
 make setup
@@ -48,6 +49,26 @@ make setup PYTHON=/path/to/python3.12
 | `make test` | pytest |
 | `make lint` | ruff + eslint + tsc |
 | `make index` | Ingest `backend/data/sample_docs` into Chroma (run before first use) |
+
+## Models
+
+Two backends, selectable per query in the playground:
+
+| Model | Backend | Cost | Typical latency |
+|---|---|---|---|
+| `qwen3:8b` | Ollama (local) | free | ~15s |
+| `claude-haiku-4-5` | Anthropic (hosted) | ~$0.002/query | ~5s |
+
+Local is the default everywhere and needs no key. To enable the hosted option:
+
+```bash
+cp backend/.env.example backend/.env   # then add ANTHROPIC_API_KEY
+```
+
+Guardrails on the paid path, because it spends real money: Haiku only (config refuses
+any other model at startup), output capped at 512 tokens, a per-session call cap, and a
+running spend estimate at `GET /api/usage` shown as a badge in the playground. Set a
+spend limit in the Anthropic Console and keep auto-reload off — that is the real cap.
 
 ## Dependency notes
 
