@@ -285,6 +285,44 @@ Each phase ends demo-able. Do not start N+1 until N runs.
 - Deploy notes: the local model doesn't deploy — flip `LLM_BACKEND=anthropic` via host
   secrets, or ship frontend + GIFs only, or bring-your-own-key
 
+### Phase 13 — Bring your own documents (OPTIONAL — decide after Phase 12)
+
+**Not committed to. Claude must ask before building this** — see the Guardrail in
+CLAUDE.md. It is scoped here so the decision is informed, not so it happens by default.
+
+**What:** upload a PDF/MD/TXT and run the techniques against it instead of the demo corpus.
+
+**Why it might be worth it:** "try it on your own document" is the difference between a
+demo someone watches and one they use, and RAG's actual proposition is *your* documents.
+Building it also demonstrates engineering a fixed corpus never does — multipart handling,
+per-session collection isolation, async re-indexing, TTL cleanup.
+
+**Why it is NOT the default, and the risk that makes this a real decision:** the demo
+corpus is deliberately rigged so techniques visibly diverge — `memtable` is a term dense
+retrieval ranks badly and BM25 nails (Fusion wins), and Cassandra's lineage is stated
+across two files (Graph RAG multi-hop wins). An arbitrary uploaded PDF usually has none
+of those properties. Someone uploads a 3-page résumé, all nine techniques return the same
+chunk and the same answer, and the reviewer concludes the techniques don't matter. **A
+badly-scoped version of this feature actively undermines the project's thesis.**
+
+**If built, it is additive, never a replacement.** The curated corpus stays the default
+and the demo path. Upload is a labelled second mode: "compare on the demo corpus to see
+how the techniques differ, then bring your own."
+
+**Scope (roughly one phase):**
+- `pypdf` extraction (the PDF loader deliberately skipped in Phase 1 — no PDF existed yet)
+- `POST /api/documents` — multipart, validate type and size
+- Per-session Chroma collections, or uploads collide between users
+- Re-index on upload (~20s): blocking with a progress state, or a job queue
+- TTL cleanup — stored embeddings are not free
+- Compare view pins both sides to one corpus snapshot, or you are comparing corpora
+  rather than techniques
+- Paid backend: an uploaded document is unbounded input, so the `top_k` and chunk
+  truncation caps become load-bearing rather than precautionary
+
+**Done when:** upload a PDF, run two techniques on it, and the compare view is explicit
+about which corpus each side used.
+
 ---
 
 ## CLAUDE.md (copy to repo root)
@@ -350,6 +388,12 @@ Keep explanations concise but real.
    Write it for someone who knows the previous phase but not this one.
 5. FLAG DON'T SILENTLY DECIDE. If the plan is ambiguous or you'd deviate from it,
    pause and ask rather than guessing.
+6. ASK ABOUT PHASE 13 (document upload) WHEN PHASE 12 COMPLETES. It is marked OPTIONAL
+   and is deliberately undecided. On finishing Phase 12, raise it explicitly: restate
+   the upside (a demo people use, not just watch) AND the risk (an arbitrary uploaded
+   document usually shows no divergence between techniques, which makes the project
+   look pointless), then let the repo owner decide. Never build it unasked, and never
+   quietly drop it either.
 
 ## Minimalism — write the least code that fully works (ponytail-style)
 Default to the simplest solution that satisfies the requirement. Before writing code, ask

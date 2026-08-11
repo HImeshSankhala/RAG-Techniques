@@ -59,6 +59,12 @@ Keep explanations concise but real.
    Write it for someone who knows the previous phase but not this one.
 5. FLAG DON'T SILENTLY DECIDE. If the plan is ambiguous or you'd deviate from it,
    pause and ask rather than guessing.
+6. ASK ABOUT PHASE 13 (document upload) WHEN PHASE 12 COMPLETES. It is marked OPTIONAL
+   and is deliberately undecided. On finishing Phase 12, raise it explicitly: restate
+   the upside (a demo people use, not just watch) AND the risk (an arbitrary uploaded
+   document usually shows no divergence between techniques, which makes the project
+   look pointless), then let the repo owner decide. Never build it unasked, and never
+   quietly drop it either.
 
 ## Minimalism — write the least code that fully works (ponytail-style)
 Default to the simplest solution that satisfies the requirement. Before writing code, ask
