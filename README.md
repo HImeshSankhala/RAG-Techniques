@@ -9,10 +9,13 @@ write-ups of what each phase taught.
 
 ## Status
 
-Phase 2 complete. Standard RAG runs end-to-end from the browser at
-[`/playground`](http://localhost:3000/playground) — pick a technique and a model, ask a
-question, and see the answer alongside the passages it came from and a timing trace of
-every stage. The other 8 techniques are listed but not yet implemented.
+Phase 3 complete.
+
+- **Read** — all 9 techniques have a learn page at `/learn/<slug>`: what it is, a diagram,
+  a trade-off table, and when *not* to use it. Readable now, even though 8 aren't built.
+- **Run** — Standard RAG works end-to-end at `/playground`: pick a technique and a model,
+  ask a question, see the answer with the passages it came from and a timing trace.
+- **Compare** — Phase 5.
 
 **No API key required.** The default backend is a local model via Ollama, so everything
 above runs free. A hosted Haiku model is selectable per query if you add a key — see

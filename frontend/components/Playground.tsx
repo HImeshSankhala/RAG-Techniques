@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ResultPanel } from "@/components/ResultPanel";
 import {
@@ -28,7 +29,13 @@ export function Playground({
 }) {
   const runnable = techniques.filter((t) => t.implemented);
 
-  const [technique, setTechnique] = useState(runnable[0]?.name ?? "");
+  // "Try it in the playground" on a learn page arrives as ?technique=<slug>.
+  // Honour it only if that technique can actually run, so a stale link to a
+  // docs-only technique lands on a usable selection instead of a dead control.
+  const requested = useSearchParams().get("technique");
+  const preselected = runnable.find((t) => t.name === requested)?.name;
+
+  const [technique, setTechnique] = useState(preselected ?? runnable[0]?.name ?? "");
   const [model, setModel] = useState(models.find((m) => m.is_default)?.id ?? models[0]?.id ?? "");
   const [query, setQuery] = useState(PRESET_QUERIES[0]);
 
