@@ -96,3 +96,25 @@ def query(embedding: list[float], top_k: int) -> list[Chunk]:
 def count() -> int:
     """How many chunks are indexed. Used to fail loudly when the index is empty."""
     return _collection().count()
+
+
+def all_chunks() -> list[IndexedChunk]:
+    """Every stored chunk, without scores.
+
+    BM25 needs the whole corpus to compute term statistics — unlike vector search,
+    which asks the index for neighbours, a keyword retriever has to see everything
+    to know how rare a term is. Chroma is the store of record for chunk text, so
+    the corpus is read back from it rather than kept in a second file that could
+    drift out of sync with the index.
+    """
+    stored = _collection().get()
+    return [
+        IndexedChunk(
+            chunk_id=chunk_id,
+            text=text,
+            source=str(metadata.get("source", "unknown")),
+        )
+        for chunk_id, text, metadata in zip(
+            stored["ids"], stored["documents"], stored["metadatas"]
+        )
+    ]

@@ -9,12 +9,14 @@ source of truth waiting to drift from the first.
 from dataclasses import dataclass
 
 from core.pipeline import RAGPipeline
+from implementations.fusion_rag import FusionRAG
 from implementations.standard_rag import StandardRAG
 
 # A technique becomes runnable by appearing here — one line. `implemented` on the
 # API is derived from membership, so there is no second place to remember.
 PIPELINES: dict[str, RAGPipeline] = {
     StandardRAG.name: StandardRAG(),
+    FusionRAG.name: FusionRAG(),
 }
 
 
