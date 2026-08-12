@@ -1,0 +1,98 @@
+## What it is
+
+Feedback-Based RAG persists user judgments. A thumbs up or down on a retrieved passage is
+stored, and future retrievals for similar queries boost or demote that passage.
+
+Interactive RAG asks the user and forgets. This one remembers.
+
+## The problem it solves
+
+Relevance is not a property of a passage — it is a property of a passage *for a query, for
+an audience*. An embedding model cannot know that your team always means the internal
+deploy tool when they say "the pipeline", not the CI one.
+
+That knowledge exists only in usage. Feedback RAG is the mechanism for capturing it
+without retraining anything.
+
+## How it works
+
+```mermaid
+flowchart TD
+  Q[Question] --> R[Retrieve top-k]
+  R --> W[Apply stored weights]
+  W --> K[Re-ranked passages]
+  K --> A[Answer]
+  A --> U{User rates passages}
+  U -->|thumbs up / down| DB[(SQLite: query, chunk, rating)]
+  DB -.-> W
+```
+
+The dotted line is the loop: today's feedback changes tomorrow's ranking. Scoring becomes:
+
+```
+final_score = similarity + α · weight(query_cluster, chunk_id)
+```
+
+`α` controls how much feedback can override the retriever. It is the most consequential
+number in the system.
+
+## Why naive boosting is dangerous
+
+This is the technique with the most interesting failure mode on the site, and it is a
+structural one, not a bug.
+
+**Feedback creates a self-reinforcing loop.** A passage that gets boosted appears higher →
+is seen more → collects more ratings → gets boosted further. A passage that never surfaces
+is never rated, so it can never recover. The system converges on a small set of
+"popular" passages and slowly stops being a retriever.
+
+This is the recommender-systems filter bubble, arriving in a RAG pipeline. The standard
+mitigations apply:
+
+- **Cap the weight.** Feedback nudges ranking; it must not dominate similarity.
+- **Decay old feedback.** A rating from six months ago describes a corpus that may have
+  changed.
+- **Reserve exploration slots.** Keep one or two unboosted results in every top-k so
+  unrated passages get a chance to be seen.
+- **Normalise by exposure.** Ten downvotes out of a thousand impressions is not the same
+  signal as ten out of twelve.
+
+Without exploration in particular, the system is not learning — it is calcifying.
+
+## Trade-offs
+
+| | Standard RAG | Feedback RAG |
+|---|---|---|
+| Personalisation | None | Improves with use |
+| Cold start | Works immediately | No signal until feedback accumulates |
+| Storage | Vector index | Vector index + feedback store |
+| Failure mode | Wrong passage | Filter bubble, silently |
+| Debuggability | Deterministic | Ranking depends on history |
+
+That last row is a real operational cost: the same query can return different passages
+this week than last, and reproducing a past result means reconstructing the feedback state
+at that time.
+
+## When to use it
+
+- Long-lived deployments with a stable, repeat user base
+- Domains with vocabulary the embedding model cannot know — internal jargon, product names
+- Enough query volume for feedback to accumulate meaningfully
+- You are willing to monitor for bubble formation
+
+## When NOT to use it
+
+- **Low-traffic systems** — never enough feedback to matter, all cost and no benefit
+- **One-shot users** — no repeat queries to improve
+- **Rapidly changing corpora** — feedback ages badly against documents that have been
+  rewritten
+- **Without exploration and decay** — you are building a bubble, not a learning system
+- **When you cannot measure whether it helped** — a ranking that changes over time and is
+  not measured is a ranking you no longer understand
+
+## Real-world
+
+Every search product does a version of this via click-through data, and every one of them
+has an exploration strategy to counteract the bubble — that part is not optional at scale.
+The RAG-specific twist is that the "click" is an explicit rating on a passage rather than
+an inferred signal from behaviour, which makes it sparser but much less noisy.

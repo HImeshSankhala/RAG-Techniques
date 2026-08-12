@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import typography from "@tailwindcss/typography";
 
 const config: Config = {
   content: [
@@ -9,7 +10,9 @@ const config: Config = {
   theme: {
     extend: {},
   },
-  plugins: [],
+  // The learn pages are nine markdown documents; `prose` is what makes headings,
+  // lists, and tables readable without hand-styling every element in MDX.
+  plugins: [typography],
 };
 
 export default config;
