@@ -9,17 +9,25 @@ overlap.
 Dense retrieval matches on *meaning*. That is its strength and precisely its weakness: it
 blurs exact tokens.
 
-There is a real example in this project's own corpus. Query **"What is a memtable?"** and
-dense retrieval returns, as its top hit, a passage about Bigtable's *tablet location
-hierarchy* — not the passage that defines a memtable, which ranks third.
+Three measured examples from this project's own corpus. In each, the query is a rare exact
+term, and dense retrieval returns **the wrong document entirely**:
 
-Why: the query has one load-bearing word. Embedded into 384 dimensions, "memtable" becomes
-a point near "Bigtable storage internals" generally, and every chunk of that document sits
-near that point. The signal that one specific chunk contains the literal token is averaged
-away with everything else in it.
+| Query | Answer lives in | Dense top hit | BM25 top hit |
+|---|---|---|---|
+| `hinted handoff` | `dynamo.md` | `raft.md` ✗ | `dynamo.md` ✓ |
+| `Chubby` | `bigtable.md` | `mapreduce.md` ✗ | `bigtable.md` ✓ |
+| `reversed hostnames` | `bigtable.md` | `dynamo.md` ✗ | `bigtable.md` ✓ |
 
-BM25 has the exact opposite profile. It would rank the memtable passage first and would
-completely miss the vector-clocks question that dense retrieval answers easily.
+Why this happens: each query is one or two load-bearing tokens with little surrounding
+context. Embedded into 384 dimensions, `hinted handoff` lands somewhere in the region of
+"distributed systems failure handling" — which is genuinely close to Raft's discussion of
+leader failure. The embedding is not wrong about the *topic*. It simply has no way to
+represent "this exact phrase appears in this exact chunk", and that is the whole of what
+the query was asking.
+
+BM25 has the exact opposite profile. It nails all three, and would completely miss the
+vector-clocks question that dense retrieval answers easily — that query shares almost no
+vocabulary with the passage that answers it.
 
 ## How it works
 
@@ -60,10 +68,38 @@ that damps the influence of the very top ranks so one retriever cannot unilatera
 the result.
 
 A document ranked #1 by both retrievers scores highest. A document ranked #1 by one and
-absent from the other still places well — which is exactly what you want, since the whole
-premise is that each retriever sees things the other misses.
+absent from the other still places well — which is what lets fusion surface something the
+other retriever missed entirely.
 
 **Complexity:** O(n log n) per retriever for the sort, O(n) for the merge.
+
+## Where RRF itself fails
+
+Summing reciprocal ranks means **a document found by both retrievers beats a document found
+by only one — always, at any `k`.** That is usually the behaviour you want, and sometimes
+it is exactly wrong.
+
+Measured here, on `reversed hostnames`:
+
+- BM25 ranks the correct chunk (`bigtable.md#0`) **#1**, and dense does not return it at all
+- Dense ranks `dynamo.md#3` **#1**; BM25 also has it, down at **#8**
+- Fused: `dynamo.md#3` wins, and the correct chunk loses
+
+The arithmetic is unavoidable:
+
+```
+dynamo.md#3    = 1/(k+1) + 1/(k+8)     found by both
+bigtable.md#0  = 1/(k+1)               found by one
+```
+
+The second term is always positive, so no choice of `k` rescues the correct answer.
+Sweeping `k` from 1 to 200 changes nothing.
+
+**The lesson: RRF rewards consensus over conviction.** When one retriever is authoritative
+for a *kind* of query — BM25 for rare exact terms — plain unweighted fusion dilutes it with
+the other retriever's confident wrongness. Production systems handle this by weighting
+retrievers per query type, which is the point at which fusion starts to need the router
+from Auto RAG.
 
 ## Trade-offs
 
@@ -78,6 +114,22 @@ premise is that each retriever sees things the other misses.
 
 The latency point matters: retrieval is a tiny fraction of total time compared to
 generation, so adding a second retriever costs almost nothing end to end.
+
+## Fusion is not strictly better
+
+Precision@1 measured over eight queries against this corpus:
+
+| | dense | BM25 | fused |
+|---|---|---|---|
+| correct top hit | 4/8 | **8/8** | 7/8 |
+
+Fusion nearly doubles dense retrieval — and loses to BM25 alone.
+
+The caveat matters: several of those queries were chosen to find divergence, so the set
+leans toward rare exact terms, which is BM25's home ground. A set of paraphrased questions
+would invert the result. **Fusion buys robustness across query types, not peak precision on
+any one type.** If you know your traffic is all exact-term lookups, ship BM25 and skip the
+vector index entirely.
 
 ## When to use it
 
