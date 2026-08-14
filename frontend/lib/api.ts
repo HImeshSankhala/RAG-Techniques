@@ -65,6 +65,37 @@ export interface RunResponse {
   metadata: Metadata;
 }
 
+/** Mirrors `api.schemas.ComparisonSide`. */
+export interface ComparisonSide {
+  technique: string;
+  model?: string | null;
+}
+
+/** Mirrors `api.schemas.ComparisonDiff`. Computed server-side so every client agrees. */
+export interface ComparisonDiff {
+  chunk_overlap: number;
+  chunk_overlap_pct: number;
+  shared_chunk_ids: string[];
+  only_a_chunk_ids: string[];
+  only_b_chunk_ids: string[];
+  latency_delta_ms: number;
+  llm_calls_delta: number;
+  steps_delta: number;
+  tokens_in_delta: number;
+  tokens_out_delta: number;
+  cost_delta_usd: number;
+  same_technique: boolean;
+  same_model: boolean;
+}
+
+/** Mirrors `api.schemas.CompareResponse`. */
+export interface CompareResponse {
+  query: string;
+  a: RunResponse;
+  b: RunResponse;
+  diff: ComparisonDiff;
+}
+
 /** Mirrors `api.schemas.UsageResponse`. */
 export interface Usage {
   calls: number;
@@ -153,5 +184,23 @@ export function runTechnique(
   return apiFetch<RunResponse>("/api/run", {
     method: "POST",
     body: JSON.stringify({ technique, query, model: model ?? null }),
+  });
+}
+
+/**
+ * POST /api/compare — two (technique × model) sides against one query.
+ *
+ * Both axes vary independently: same model + different techniques asks "does
+ * retrieval differ?", same technique + different models asks "does the model
+ * differ?". The diff row is computed server-side.
+ */
+export function compareTechniques(
+  query: string,
+  a: ComparisonSide,
+  b: ComparisonSide,
+): Promise<CompareResponse> {
+  return apiFetch<CompareResponse>("/api/compare", {
+    method: "POST",
+    body: JSON.stringify({ query, a, b }),
   });
 }
