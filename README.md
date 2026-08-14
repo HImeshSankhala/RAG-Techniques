@@ -13,9 +13,11 @@ Phase 3 complete.
 
 - **Read** — all 9 techniques have a learn page at `/learn/<slug>`: what it is, a diagram,
   a trade-off table, and when *not* to use it. Readable now, even though 8 aren't built.
-- **Run** — Standard RAG works end-to-end at `/playground`: pick a technique and a model,
-  ask a question, see the answer with the passages it came from and a timing trace.
-- **Compare** — Phase 5.
+- **Run** — Standard RAG and Fusion RAG work end-to-end at `/playground`: pick a technique
+  and a model, ask a question, see the answer with the passages it came from and a
+  timing trace.
+- **Compare** — `/compare` runs two `(technique × model)` sides on one query and measures
+  what differed: evidence overlap, latency, cost, and which chunks only one side saw.
 
 **No API key required.** The default backend is a local model via Ollama, so everything
 above runs free. A hosted Haiku model is selectable per query if you add a key — see

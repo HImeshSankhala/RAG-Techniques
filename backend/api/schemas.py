@@ -94,3 +94,59 @@ class RunResponse(BaseModel):
     retrieved_chunks: list[Chunk]
     steps: list[Step]
     metadata: Metadata
+
+
+class ComparisonSide(BaseModel):
+    """One half of a comparison: which technique, on which model."""
+
+    technique: str = Field(description="Technique slug.")
+    model: str | None = Field(
+        default=None, description="Model id. Omit for the configured default."
+    )
+
+
+class CompareRequest(BaseModel):
+    """Two (technique × model) sides against one query.
+
+    Both axes vary independently, which is what supports the two interesting
+    comparisons: same model + different techniques (does retrieval differ?), and
+    same technique + different models (does the model differ?).
+    """
+
+    query: str = Field(min_length=1, max_length=2000)
+    a: ComparisonSide
+    b: ComparisonSide
+
+
+class ComparisonDiff(BaseModel):
+    """Computed differences between the two runs.
+
+    Server-side rather than in the UI: this is the part a reader is meant to
+    learn from, so it is part of the API contract and identical for any client.
+    """
+
+    chunk_overlap: int = Field(description="Chunks both sides retrieved.")
+    chunk_overlap_pct: float = Field(
+        description="Overlap as a percentage of the larger retrieved set. "
+        "0 means the two techniques saw entirely different evidence."
+    )
+    shared_chunk_ids: list[str]
+    only_a_chunk_ids: list[str]
+    only_b_chunk_ids: list[str]
+
+    latency_delta_ms: float = Field(description="b minus a. Negative means b was faster.")
+    llm_calls_delta: int
+    steps_delta: int
+    tokens_in_delta: int
+    tokens_out_delta: int
+    cost_delta_usd: float
+
+    same_technique: bool
+    same_model: bool
+
+
+class CompareResponse(BaseModel):
+    query: str
+    a: RunResponse
+    b: RunResponse
+    diff: ComparisonDiff
