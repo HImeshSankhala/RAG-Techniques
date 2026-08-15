@@ -74,6 +74,8 @@ class FusionRAG(RAGPipeline):
                 steps=steps.steps,
                 metadata=Metadata(
                     model=model,
+                    # Derived, not reported — no call was made. See standard_rag.
+                    backend=llm.resolve_backend(model),
                     latency_ms=steps.elapsed_ms,
                     retrieval_passes=1,
                     termination_reason="empty_index",

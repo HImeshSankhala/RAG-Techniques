@@ -18,20 +18,29 @@ export function DiffSummary({
   a: RunResponse;
   b: RunResponse;
 }) {
+  // Nothing retrieved on either side is not "they disagreed completely" — it is
+  // an unbuilt index. The overlap arithmetic gives 0% for both, so the two cases
+  // have to be told apart here rather than from the number.
+  const noEvidence = a.retrieved_chunks.length === 0 && b.retrieved_chunks.length === 0;
+
   return (
     <section className="rounded-lg border border-slate-200 p-5 dark:border-slate-800">
       <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500">
         What differed
       </h2>
 
-      <p className="mt-3 text-sm leading-relaxed">{summarise(diff, a, b)}</p>
+      <p className="mt-3 text-sm leading-relaxed">{summarise(diff, a, b, noEvidence)}</p>
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric
           label="Evidence overlap"
-          value={`${diff.chunk_overlap_pct}%`}
-          detail={`${diff.chunk_overlap} shared chunk${diff.chunk_overlap === 1 ? "" : "s"}`}
-          tone={diff.chunk_overlap_pct < 100 ? "notable" : "neutral"}
+          value={noEvidence ? "—" : `${diff.chunk_overlap_pct}%`}
+          detail={
+            noEvidence
+              ? "nothing retrieved"
+              : `${diff.chunk_overlap} shared chunk${diff.chunk_overlap === 1 ? "" : "s"}`
+          }
+          tone={!noEvidence && diff.chunk_overlap_pct < 100 ? "notable" : "neutral"}
         />
         <Metric
           label="Latency"
@@ -73,7 +82,12 @@ export function DiffSummary({
  * differed" are different lessons, and a reader should not have to infer which
  * one they are looking at from four numbers.
  */
-function summarise(diff: ComparisonDiff, a: RunResponse, b: RunResponse): string {
+function summarise(
+  diff: ComparisonDiff,
+  a: RunResponse,
+  b: RunResponse,
+  noEvidence: boolean,
+): string {
   const axis = diff.same_technique
     ? diff.same_model
       ? "Both sides ran the same technique on the same model"
@@ -81,6 +95,10 @@ function summarise(diff: ComparisonDiff, a: RunResponse, b: RunResponse): string
     : diff.same_model
       ? `Different techniques on the same model (${a.technique} vs ${b.technique})`
       : `Different techniques and different models (${a.technique}/${a.metadata.model} vs ${b.technique}/${b.metadata.model})`;
+
+  if (noEvidence) {
+    return `${axis}, but neither side retrieved anything — the index is empty. Run \`make index\`, then compare again.`;
+  }
 
   if (diff.chunk_overlap_pct === 100) {
     return diff.same_technique && diff.same_model
