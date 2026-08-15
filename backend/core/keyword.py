@@ -17,8 +17,9 @@ from functools import lru_cache
 
 from rank_bm25 import BM25Okapi
 
+from core import vectorstore
 from core.pipeline import Chunk
-from core.vectorstore import IndexedChunk, all_chunks
+from core.vectorstore import IndexedChunk
 
 # Split on anything that isn't a letter or digit. Deliberately crude: no stemming,
 # no stopword list. Stemming would map "retrieves" and "retrieval" together but
@@ -39,8 +40,11 @@ def _index() -> tuple[BM25Okapi, tuple[IndexedChunk, ...]]:
     running leaves this stale. Worth revisiting if indexing ever moves online
     (Phase 13 would force that).
     """
-    chunks = tuple(all_chunks())
+    chunks = tuple(vectorstore.all_chunks())
     if not chunks:
+        # Unreachable through `query`, which guards on the count first. Kept as an
+        # invariant for any other caller: a BM25 index over nothing is not a usable
+        # object, so building one must fail rather than return silently.
         raise RuntimeError("Nothing indexed — run `make index` first.")
     return BM25Okapi([tokenize(c.text) for c in chunks]), chunks
 
@@ -51,7 +55,15 @@ def query(text: str, top_k: int) -> list[Chunk]:
     Scores are raw BM25: unbounded, corpus-dependent, and NOT comparable to the
     cosine scores from vector search. That incomparability is the reason fusion
     merges by rank rather than by score.
+
+    An unbuilt index returns [] rather than raising, matching what dense retrieval
+    does. The two retrievers have to agree on this: Fusion runs both and reports
+    "nothing is indexed" from the merged result, so one retriever raising while the
+    other returns empty turns a setup state into a 500.
     """
+    if vectorstore.count() == 0:
+        return []
+
     bm25, chunks = _index()
     scores = bm25.get_scores(tokenize(text))
 

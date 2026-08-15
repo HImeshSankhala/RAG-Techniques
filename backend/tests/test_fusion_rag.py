@@ -89,6 +89,26 @@ def test_fusion_recovers_the_correct_document(stub_llm: list[str]) -> None:
     assert result.retrieved_chunks[0].source == "dynamo.md"
 
 
+def test_empty_index_is_reported_not_raised(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Both retrievers must return empty on an unbuilt index, not one of each.
+
+    BM25 used to raise here while dense returned []. Fusion never reached its own
+    empty-index branch, and the RuntimeError escaped /api/run as a 500 — the one
+    setup mistake most likely to be a new user's first request.
+    """
+    monkeypatch.setattr(vectorstore, "count", lambda: 0)
+    monkeypatch.setattr(vectorstore, "query", lambda embedding, top_k: [])
+
+    assert keyword.query("hinted handoff", 4) == []
+
+    result = FusionRAG().run(QUERY)
+
+    assert result.retrieved_chunks == []
+    assert result.metadata.termination_reason == "empty_index"
+    assert result.metadata.backend == "ollama"
+    assert "make index" in result.answer
+
+
 def test_registered_and_runnable() -> None:
     from implementations.registry import get_pipeline
 
