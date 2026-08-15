@@ -93,6 +93,10 @@ class StandardRAG(RAGPipeline):
                 steps=steps.steps,
                 metadata=Metadata(
                     model=model,
+                    # No call was made, so the backend is derived rather than
+                    # reported. Without it the compare view shows a blank field
+                    # on one side and a real one on the other.
+                    backend=llm.resolve_backend(model),
                     latency_ms=steps.elapsed_ms,
                     retrieval_passes=1,
                     termination_reason="empty_index",

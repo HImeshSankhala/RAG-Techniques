@@ -12,6 +12,7 @@ Requires the index to exist: run `make index` first.
 import pytest
 
 from core import llm, vectorstore
+from core.config import settings
 from core.llm import LLMResponse
 from implementations.standard_rag import StandardRAG
 
@@ -94,6 +95,21 @@ def test_metadata_reports_cost_and_latency(stub_llm: list[str]) -> None:
     assert metadata.termination_reason == "single_pass"
     # Local backend is free; the paid path is what carries a cost.
     assert metadata.cost_estimate_usd == 0.0
+
+
+def test_empty_index_still_reports_a_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The early return has to fill the same Metadata fields as the normal path.
+
+    A blank `backend` renders as an empty badge next to a populated one in the
+    compare view, which reads as a bug rather than as an unbuilt index.
+    """
+    monkeypatch.setattr(vectorstore, "query", lambda embedding, top_k: [])
+
+    metadata = StandardRAG().run(QUERY).metadata
+
+    assert metadata.backend == "ollama"
+    assert metadata.model == settings.ollama_model
+    assert metadata.termination_reason == "empty_index"
 
 
 def test_registered_under_its_slug() -> None:
