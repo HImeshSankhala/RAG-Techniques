@@ -13,48 +13,8 @@ gets whichever single document scored best (Graph).
 
 from core import embeddings, llm, vectorstore
 from core.config import settings
-from core.pipeline import Chunk, Metadata, RAGPipeline, RAGResult, StepRecorder
-
-SYSTEM_PROMPT = """You answer questions using only the context passages provided.
-
-Rules:
-- Use only information present in the passages. Do not add outside knowledge.
-- If the passages do not contain the answer, say so plainly. Do not guess.
-- Cite the source filename in parentheses after each claim, e.g. (dynamo.md).
-- Be concise: a short paragraph, or a few sentences."""
-
-
-def _build_prompt(query: str, chunks: list[Chunk]) -> str:
-    """Lay out the retrieved passages, then the question.
-
-    Question last on purpose: the passages are the bulk of the prompt and the same
-    for everyone reading the same corpus, so keeping them first makes the prefix
-    cacheable later. It also puts the question closest to the answer.
-
-    Each passage is truncated, because on the paid backend an unusually long
-    chunk is money rather than just latency.
-    """
-    passages = "\n\n".join(
-        f"[Passage {i + 1}] (source: {chunk.source})\n{chunk.text[: settings.max_chunk_chars]}"
-        for i, chunk in enumerate(chunks)
-    )
-    return f"Context passages:\n\n{passages}\n\nQuestion: {query}"
-
-
-def _groundedness(answer: str, chunks: list[Chunk]) -> float:
-    """Fraction of retrieved sources the answer cites.
-
-    A compliance check, not an accuracy check. It measures whether the model
-    followed the citation instruction — it cannot tell whether a cited claim is
-    actually supported by the passage. Treated as a cheap signal that something
-    is off (a 0.0 usually means the model ignored the context entirely), not as
-    a quality score.
-    """
-    sources = {chunk.source for chunk in chunks}
-    if not sources:
-        return 0.0
-    cited = sum(1 for source in sources if source in answer)
-    return round(cited / len(sources), 3)
+from core.pipeline import Metadata, RAGPipeline, RAGResult, StepRecorder
+from core.prompting import SYSTEM_PROMPT, build_prompt, groundedness
 
 
 class StandardRAG(RAGPipeline):
@@ -104,7 +64,7 @@ class StandardRAG(RAGPipeline):
             )
 
         with steps.record("Generate answer") as step:
-            response = llm.generate(SYSTEM_PROMPT, _build_prompt(query, chunks), model=model)
+            response = llm.generate(SYSTEM_PROMPT, build_prompt(query, chunks), model=model)
             step.detail = (
                 f"{response.model} ({response.backend}): "
                 f"{response.input_tokens} in / {response.output_tokens} out"
@@ -129,7 +89,7 @@ class StandardRAG(RAGPipeline):
                 tokens_in=response.input_tokens,
                 tokens_out=response.output_tokens,
                 termination_reason="single_pass",
-                groundedness=_groundedness(response.text, chunks),
+                groundedness=groundedness(response.text, chunks),
                 cost_estimate_usd=round(cost, 6),
             ),
         )

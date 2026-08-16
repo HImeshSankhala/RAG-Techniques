@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from core.pipeline import RAGPipeline
 from implementations.fusion_rag import FusionRAG
+from implementations.multi_pass_rag import MultiPassRAG
 from implementations.standard_rag import StandardRAG
 
 # A technique becomes runnable by appearing here — one line. `implemented` on the
@@ -17,6 +18,7 @@ from implementations.standard_rag import StandardRAG
 PIPELINES: dict[str, RAGPipeline] = {
     StandardRAG.name: StandardRAG(),
     FusionRAG.name: FusionRAG(),
+    MultiPassRAG.name: MultiPassRAG(),
 }
 
 

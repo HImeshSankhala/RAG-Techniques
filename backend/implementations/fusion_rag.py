@@ -16,7 +16,7 @@ from core import embeddings, keyword, llm, vectorstore
 from core.config import settings
 from core.fusion import RRF_K, reciprocal_rank_fusion
 from core.pipeline import Chunk, Metadata, RAGPipeline, RAGResult, StepRecorder
-from implementations.standard_rag import SYSTEM_PROMPT, _build_prompt, _groundedness
+from core.prompting import SYSTEM_PROMPT, build_prompt, groundedness
 
 # Each retriever returns more than the final top_k so fusion has room to work.
 # If both returned exactly top_k, a chunk ranked 5th by one and 1st by the other
@@ -83,7 +83,7 @@ class FusionRAG(RAGPipeline):
             )
 
         with steps.record("Generate answer") as step:
-            response = llm.generate(SYSTEM_PROMPT, _build_prompt(query, chunks), model=model)
+            response = llm.generate(SYSTEM_PROMPT, build_prompt(query, chunks), model=model)
             step.detail = (
                 f"{response.model} ({response.backend}): "
                 f"{response.input_tokens} in / {response.output_tokens} out"
@@ -111,7 +111,7 @@ class FusionRAG(RAGPipeline):
                 tokens_in=response.input_tokens,
                 tokens_out=response.output_tokens,
                 termination_reason="single_pass",
-                groundedness=_groundedness(response.text, chunks),
+                groundedness=groundedness(response.text, chunks),
                 cost_estimate_usd=round(cost, 6),
             ),
         )

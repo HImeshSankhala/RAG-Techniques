@@ -51,7 +51,7 @@ def test_implemented_flag_tracks_the_registry() -> None:
     body = client.get("/api/techniques").json()
     runnable = {entry["name"] for entry in body if entry["implemented"]}
 
-    assert runnable == {"standard-rag", "fusion-rag"}
+    assert runnable == {"standard-rag", "fusion-rag", "multi-pass-rag"}
 
 
 def test_run_rejects_an_unknown_technique() -> None:

@@ -40,7 +40,9 @@ asked "what is missing?" can almost always find *something*, so the loop has no 
 natural stopping point. Without a cap it can run indefinitely.
 
 **Cost.** On a paid backend, an uncapped loop is the fastest way to drain a budget. Three
-passes is up to six LLM calls — draft, critique, revise, critique, revise, critique. At
+passes is up to five LLM calls — draft, critique, revise, critique, revise. There is no
+critique after the final revision: the cap has already been reached, so nothing could act
+on its verdict, and a call whose answer must be discarded is a call not worth buying. At
 Haiku rates that is roughly $0.01 per query rather than $0.002. On a more expensive model
 it is the difference between a demo and a bill.
 
@@ -51,7 +53,7 @@ parameter buried in the pipeline.
 
 | | Standard RAG | Multi-Pass RAG |
 |---|---|---|
-| LLM calls | 1 | 2–6 |
+| LLM calls | 1 | 2–5 |
 | Retrieval passes | 1 | 1–3 |
 | Latency | ~1x | 3–5x |
 | Cost | ~1x | 3–6x |

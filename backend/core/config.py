@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     # Stops a stuck loop during development from quietly draining credit.
     anthropic_max_session_calls: int = 50
 
+    # --- Iteration caps ----------------------------------------------------
+    # Multi-Pass (Phase 6) loops until its own critique says it is done, and a
+    # model asked "what is missing?" can nearly always find something. On the
+    # local backend an uncapped loop costs latency; on the paid one it is the
+    # fastest way to drain the $5. That makes this a spend guarantee rather than
+    # a tuning knob, which is why it lives here beside the other caps instead of
+    # inside the pipeline that happens to use it.
+    multi_pass_max_passes: int = 3
+
     # Haiku 4.5 list price, USD per million tokens. Used for the local estimate
     # in .usage.json — the Console spend limit is the real cap.
     anthropic_input_usd_per_mtok: float = 1.00
@@ -71,6 +80,16 @@ class Settings(BaseSettings):
     # Truncate any single chunk before it reaches a paid call, so one oversized
     # document cannot inflate an Anthropic request.
     max_chunk_chars: int = 1500
+
+    # Output budget for local helper calls, which run with qwen3's reasoning mode
+    # enabled (see core/llm.py). Ollama draws thinking tokens from the same
+    # num_predict budget as the reply, so a budget sized for the reply alone gets
+    # eaten by the reasoning and the reply comes back EMPTY. Multi-Pass reads an
+    # empty critique as "no gaps" and silently stops looping — measured at 233 of
+    # 256 tokens, i.e. intermittently. This is separate from the Anthropic helper
+    # cap on purpose: that one is a spend guardrail, this one is free local
+    # generation and bounds latency only.
+    ollama_helper_num_predict: int = 1024
 
     @field_validator("anthropic_model")
     @classmethod
