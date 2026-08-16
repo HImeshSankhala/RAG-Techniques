@@ -30,6 +30,11 @@ const PRESETS = [
     query: "How does Dynamo handle conflicting concurrent writes?",
     note: "control — a paraphrased question; both retrievers lead with the right document",
   },
+  {
+    query:
+      "How does Dynamo achieve high write availability, and how does Raft handle log compaction?",
+    note: "two-part question — Multi-Pass loops for the half its first search missed (3 steps vs 8)",
+  },
 ];
 
 export function CompareView({

@@ -73,14 +73,14 @@ def generate(system: str, user: str, model: str | None = None, *, helper: bool =
     model = model or settings.default_model
 
     if resolve_backend(model) == "ollama":
-        return _generate_ollama(system, user, model)
+        return _generate_ollama(system, user, model, helper=helper)
     return _generate_anthropic(system, user, model, helper=helper)
 
 
 # --- Local backend ---------------------------------------------------------
 
 
-def _generate_ollama(system: str, user: str, model: str) -> LLMResponse:
+def _generate_ollama(system: str, user: str, model: str, *, helper: bool = False) -> LLMResponse:
     payload = {
         "model": model,
         "messages": [
@@ -88,14 +88,28 @@ def _generate_ollama(system: str, user: str, model: str) -> LLMResponse:
             {"role": "user", "content": user},
         ],
         "stream": False,
-        # qwen3 is a reasoning model. Grounded answering from supplied passages
-        # does not need it, and leaving it on both slows the trace and leaks a
-        # stray "/think" control token into the answer text.
-        "think": False,
+        # qwen3 is a reasoning model, and whether reasoning helps depends on the
+        # job. Answering from supplied passages is extraction: thinking only slows
+        # the trace and leaks a stray "/think" control token into the answer.
+        #
+        # Helper calls are judgements, and there thinking is load-bearing. Measured
+        # on Multi-Pass's critique: asked whether passages about Dynamo and Bigtable
+        # cover a question about Spanner, this model answers "COMPLETE" with
+        # thinking off — deterministically, 3 times out of 3, and regardless of how
+        # the prompt is worded or whether it sits in the system or user turn. With
+        # thinking on it correctly reports the gap. A self-critique that cannot
+        # critique makes the whole loop a no-op, so the flag follows the call type.
+        "think": helper,
         "options": {
             # The load-bearing option — see core/config.py.
             "num_ctx": settings.ollama_num_ctx,
-            "num_predict": settings.anthropic_max_tokens_answer,
+            # Not the Anthropic helper cap: that is a spend guardrail, and thinking
+            # tokens come out of this same budget. See core/config.py.
+            "num_predict": (
+                settings.ollama_helper_num_predict
+                if helper
+                else settings.anthropic_max_tokens_answer
+            ),
         },
     }
 

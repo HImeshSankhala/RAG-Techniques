@@ -65,6 +65,15 @@ def test_top_k_is_small() -> None:
     assert settings.top_k <= 5
 
 
+def test_multi_pass_iterations_are_capped() -> None:
+    """An uncapped self-terminating loop is the #1 way to drain credit.
+
+    PLAN fixes Multi-Pass at <= 3 passes. At 3 that is at most 5 paid calls per
+    query; the cap is what makes the worst case a number rather than a hope.
+    """
+    assert settings.multi_pass_max_passes <= 3
+
+
 def test_local_is_the_default_backend() -> None:
     """Nothing reaches the paid backend without explicitly asking for it."""
     assert settings.llm_backend == "ollama"
