@@ -127,14 +127,16 @@ class MultiPassRAG(RAGPipeline):
 
         while passes < settings.multi_pass_max_passes:
             with steps.record(f"Critique draft (pass {passes})") as step:
-                # `helper=True` takes the tighter output cap: a list of search
-                # queries needs a fraction of an answer's budget, and this call
-                # happens once per pass.
+                # helper: a list of search queries needs a fraction of an answer's
+                # budget, and this runs once per pass.
+                # reason: without it this model answers COMPLETE to everything and
+                # the loop is a no-op. Measured — see core/llm.py.
                 critique = llm.generate(
                     CRITIQUE_SYSTEM,
                     _build_critique_prompt(query, chunks, response.text),
                     model=model,
                     helper=True,
+                    reason=True,
                 )
                 llm_calls += 1
                 tokens_in += critique.input_tokens

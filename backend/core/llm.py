@@ -64,23 +64,50 @@ def resolve_backend(model: str) -> Backend:
     )
 
 
-def generate(system: str, user: str, model: str | None = None, *, helper: bool = False) -> LLMResponse:
+def generate(
+    system: str,
+    user: str,
+    model: str | None = None,
+    *,
+    helper: bool = False,
+    reason: bool = False,
+) -> LLMResponse:
     """Answer a prompt on the requested model, defaulting to the local backend.
 
-    `helper` marks cheap internal calls (routers, critiques in later phases) so
-    they get the tighter output cap.
+    Two independent knobs, because the internal calls this project makes want
+    different combinations of them:
+
+    `helper` — a cheap internal call rather than a user-facing answer. Takes the
+    tighter output budget.
+
+    `reason` — let the model think before replying. Costs seconds and tokens, and
+    buys judgement.
+
+    They were one flag until it became clear that is wrong. Multi-Pass's critique
+    is cheap *and* needs judgement (`helper=True, reason=True`): with thinking off
+    it answers COMPLETE to everything and the loop never runs. Auto RAG's router
+    is the opposite — a classifier in front of expensive workers, where thinking
+    would make the "cheap" step cost more than the work it routes
+    (`helper=True, reason=False`). One flag could not express both.
+
+    Only the Ollama backend honours `reason` today. Anthropic ignores it: extended
+    thinking bills output tokens, which is the expensive side of the $5 ceiling.
+    A technique that depends on reasoning therefore behaves differently on the paid
+    backend — worth knowing before reading a compare run as a model difference.
     """
     model = model or settings.default_model
 
     if resolve_backend(model) == "ollama":
-        return _generate_ollama(system, user, model, helper=helper)
+        return _generate_ollama(system, user, model, helper=helper, reason=reason)
     return _generate_anthropic(system, user, model, helper=helper)
 
 
 # --- Local backend ---------------------------------------------------------
 
 
-def _generate_ollama(system: str, user: str, model: str, *, helper: bool = False) -> LLMResponse:
+def _generate_ollama(
+    system: str, user: str, model: str, *, helper: bool = False, reason: bool = False
+) -> LLMResponse:
     payload = {
         "model": model,
         "messages": [
@@ -92,14 +119,16 @@ def _generate_ollama(system: str, user: str, model: str, *, helper: bool = False
         # job. Answering from supplied passages is extraction: thinking only slows
         # the trace and leaks a stray "/think" control token into the answer.
         #
-        # Helper calls are judgements, and there thinking is load-bearing. Measured
-        # on Multi-Pass's critique: asked whether passages about Dynamo and Bigtable
-        # cover a question about Spanner, this model answers "COMPLETE" with
-        # thinking off — deterministically, 3 times out of 3, and regardless of how
-        # the prompt is worded or whether it sits in the system or user turn. With
-        # thinking on it correctly reports the gap. A self-critique that cannot
-        # critique makes the whole loop a no-op, so the flag follows the call type.
-        "think": helper,
+        # Judgement calls are the opposite. Measured on Multi-Pass's critique: asked
+        # whether passages about Dynamo and Bigtable cover a question about Spanner,
+        # this model answers "COMPLETE" with thinking off — deterministically, 3
+        # times out of 3, regardless of prompt wording or system/user placement.
+        # With thinking on it correctly reports the gap. A self-critique that cannot
+        # critique makes the whole loop a no-op.
+        #
+        # Driven by `reason`, not by `helper`: a router is also an internal call and
+        # must stay fast. See `generate`.
+        "think": reason,
         "options": {
             # The load-bearing option — see core/config.py.
             "num_ctx": settings.ollama_num_ctx,

@@ -89,9 +89,20 @@ The controlled test:
 | user turn, `think: False` | `COMPLETE` |
 
 So the fix is that **thinking follows the call type, not the process**: extraction
-does not need it, judgement does. `helper=True` — which already existed to mark
-cheap internal calls for the tighter token cap — now also enables reasoning on the
-Ollama path.
+does not need it, judgement does.
+
+The first version of that fix hung reasoning off the existing `helper` flag, and
+that was wrong for a reason worth recording: `helper` means "cheap internal call",
+and the *next* internal call this project needs is Phase 7's router — a classifier
+in front of expensive workers, where thinking would make the cheap step cost more
+than the work it dispatches. Measured: 10.2s with reasoning, **0.5s without**.
+
+One flag could not express both, so there are now two independent ones —
+`helper` (tighter budget) and `reason` (think first). Multi-Pass's critique is
+`helper=True, reason=True`; the router will be `helper=True, reason=False`.
+Asserted in `test_llm_backends.py` against the request body, because getting the
+combination wrong is invisible — the call still succeeds, it just answers badly or
+slowly.
 
 The transferable lesson is about the shape of the bug, not the flag. A global
 inference setting chosen for the *dominant* call type silently degrades every
