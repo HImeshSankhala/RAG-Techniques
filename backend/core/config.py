@@ -81,14 +81,17 @@ class Settings(BaseSettings):
     # document cannot inflate an Anthropic request.
     max_chunk_chars: int = 1500
 
-    # Output budget for local helper calls, which run with qwen3's reasoning mode
-    # enabled (see core/llm.py). Ollama draws thinking tokens from the same
+    # Output budget for local helper calls. Sized for the ones that also reason
+    # (`reason=True`, see core/llm.py): Ollama draws thinking tokens from the same
     # num_predict budget as the reply, so a budget sized for the reply alone gets
     # eaten by the reasoning and the reply comes back EMPTY. Multi-Pass reads an
     # empty critique as "no gaps" and silently stops looping — measured at 233 of
-    # 256 tokens, i.e. intermittently. This is separate from the Anthropic helper
-    # cap on purpose: that one is a spend guardrail, this one is free local
-    # generation and bounds latency only.
+    # 256 tokens, i.e. intermittently.
+    #
+    # Separate from the Anthropic helper cap on purpose: that one is a spend
+    # guardrail on a paid call, this one is free local generation and bounds
+    # latency only. Reusing one constant for both is what turned a cost control
+    # into a correctness bug.
     ollama_helper_num_predict: int = 1024
 
     @field_validator("anthropic_model")
