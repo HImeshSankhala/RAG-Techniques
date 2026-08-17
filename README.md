@@ -9,13 +9,13 @@ write-ups of what each phase taught.
 
 ## Status
 
-Phase 3 complete.
+Phase 6 complete.
 
 - **Read** — all 9 techniques have a learn page at `/learn/<slug>`: what it is, a diagram,
-  a trade-off table, and when *not* to use it. Readable now, even though 8 aren't built.
-- **Run** — Standard RAG and Fusion RAG work end-to-end at `/playground`: pick a technique
-  and a model, ask a question, see the answer with the passages it came from and a
-  timing trace.
+  a trade-off table, and when *not* to use it. Readable now, even though 6 aren't built.
+- **Run** — Standard RAG, Fusion RAG and Multi-Pass RAG work end-to-end at `/playground`:
+  pick a technique and a model, ask a question, see the answer with the passages it came
+  from and a timing trace.
 - **Compare** — `/compare` runs two `(technique × model)` sides on one query and measures
   what differed: evidence overlap, latency, cost, and which chunks only one side saw.
 
@@ -63,6 +63,9 @@ Two backends, selectable per query in the playground:
 |---|---|---|---|
 | `qwen3:8b` | Ollama (local) | free | ~15s |
 | `claude-haiku-4-5` | Anthropic (hosted) | ~$0.002/query | ~5s |
+
+Latencies are for a single-pass technique. Multi-Pass RAG makes up to 5 model calls per
+query and takes ~45s locally — that cost *is* the lesson it teaches.
 
 Local is the default everywhere and needs no key. To enable the hosted option:
 

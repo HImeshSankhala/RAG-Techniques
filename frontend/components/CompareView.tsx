@@ -150,7 +150,13 @@ export function CompareView({
           </button>
 
           {isRunning && (
-            <ElapsedTimer hint={bothLocal ? "two local runs, ~30s" : "running in parallel"} />
+            <ElapsedTimer
+              // No estimate in seconds. It was "~30s" when the slowest technique
+              // was Fusion; Multi-Pass loops to ~45s on one side alone, and any
+              // hardcoded number goes stale the next time a technique lands. A
+              // timer that overshoots its own estimate reads as a hang.
+              hint={bothLocal ? "sequential — B starts when A finishes" : "running in parallel"}
+            />
           )}
 
           {usage && usage.calls > 0 && (
