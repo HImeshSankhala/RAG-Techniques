@@ -197,6 +197,11 @@ seeing some retrieved context and answers confidently anyway.
 
 ## Measured, once the critique actually worked
 
+> Everything in this section was measured against the **18-chunk, 4-document**
+> corpus this phase was built on. The corpus was later expanded to 43 chunks
+> across 9 documents, which changes some of these numbers and makes one of the
+> observations below obsolete in a useful way — noted inline.
+
 `"How does Dynamo achieve high write availability, and how does Raft handle log
 compaction?"`, local qwen3:8b:
 
@@ -233,6 +238,19 @@ criterion exists rather than trusting the critique to converge.
 everything there is, so pass 1 usually already holds the relevant documents and a gap
 query rarely ranks anything new. The path is unit-tested, but it has not fired against
 the real index, and that is worth knowing before treating this technique as proven.
+
+> **Update, after the corpus grew to 43 chunks / 9 documents.** `top_k` of 4 is now
+> ~9%, and the same query loops the same way: 3 passes, 4 calls, 40.2s against
+> Standard's 3 steps and 9.5s. `gaps_closed` *still* has not fired — this run ended
+> `no_new_evidence` again, because the critique repeated a gap it had already had
+> filled. So the earlier diagnosis was incomplete: corpus size was not the only thing
+> keeping that path unreachable. The critique failing to notice a filled gap is the
+> more fundamental cause, and it is a property of the model, not the index.
+>
+> The Spanner example above is also obsolete as a *demonstration*: `spanner.md` now
+> exists, so that query retrieves real evidence and correctly terminates
+> `single_pass`. The measurement stands as a record of the bug; it is no longer a
+> reproduction of it.
 
 ## Refactor: `core/prompting.py`
 

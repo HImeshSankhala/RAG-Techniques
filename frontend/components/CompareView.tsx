@@ -23,17 +23,26 @@ import {
  * comparison correctly shows almost no difference.
  */
 const PRESETS = [
-  { query: "What is hinted handoff?", note: "dense lands on raft.md; BM25 on dynamo.md" },
-  { query: "What is Chubby used for?", note: "dense lands on mapreduce.md" },
-  { query: "What are reversed hostnames used for?", note: "dense misses bigtable.md" },
   {
-    query: "How does Dynamo handle conflicting concurrent writes?",
-    note: "control — a paraphrased question; both retrievers lead with the right document",
+    query: "What is hinted handoff?",
+    note: "dense leads with raft.md — right topic, wrong document; fusion surfaces dynamo.md",
+  },
+  {
+    query: "What is commit wait?",
+    note: "dense leads with chubby.md; only the literal term finds spanner.md",
+  },
+  {
+    query: "What are reversed hostnames used for?",
+    note: "dense misses bigtable.md entirely; fusion pulls it back into the evidence",
+  },
+  {
+    query: "What is Chubby used for?",
+    note: "control — both retrievers agree, so the comparison correctly shows no divergence",
   },
   {
     query:
       "How does Dynamo achieve high write availability, and how does Raft handle log compaction?",
-    note: "two-part question — Multi-Pass loops for the half its first search missed (3 steps vs 8)",
+    note: "two-part question — Multi-Pass loops to three passes for the half its first search missed",
   },
 ];
 
