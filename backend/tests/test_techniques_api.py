@@ -69,3 +69,13 @@ def test_run_distinguishes_docs_only_from_unknown() -> None:
 def test_run_rejects_an_empty_query() -> None:
     response = client.post("/api/run", json={"technique": "standard-rag", "query": ""})
     assert response.status_code == 422
+
+
+def test_run_rejects_a_whitespace_only_query() -> None:
+    """A length check that counts characters lets "   " through.
+
+    That is worse than a 500: it reaches the model, which invents a question and
+    answers it, so the run looks successful and the answer is about nothing asked.
+    """
+    response = client.post("/api/run", json={"technique": "standard-rag", "query": "   "})
+    assert response.status_code == 422

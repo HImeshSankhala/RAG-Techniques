@@ -18,22 +18,37 @@ import {
  *
  * The first three are measured cases where dense retrieval returns the wrong
  * document and BM25 does not — running Standard vs Fusion on them shows the two
- * techniques retrieving different evidence. The last is the opposite control: a
- * paraphrased question with no rare tokens, where both retrievers agree and the
- * comparison correctly shows almost no difference.
+ * techniques retrieving different evidence. The fourth is the control: a
+ * paraphrased question whose vocabulary is all over its own document, where
+ * fusion's merge returns exactly what dense retrieval already had. The fifth is
+ * for Multi-Pass rather than Fusion — a question with two halves.
+ *
+ * All five are measured against the current index, not remembered. A preset note
+ * is a claim about a specific index, and re-indexing expires it: the previous
+ * control was `What is Chubby used for?`, which stopped being one the moment
+ * `chubby.md` and `gfs.md` joined the corpus.
  */
 const PRESETS = [
-  { query: "What is hinted handoff?", note: "dense lands on raft.md; BM25 on dynamo.md" },
-  { query: "What is Chubby used for?", note: "dense lands on mapreduce.md" },
-  { query: "What are reversed hostnames used for?", note: "dense misses bigtable.md" },
   {
-    query: "How does Dynamo handle conflicting concurrent writes?",
-    note: "control — a paraphrased question; both retrievers lead with the right document",
+    query: "What is hinted handoff?",
+    note: "dense leads with raft.md — right topic, wrong document; fusion surfaces dynamo.md",
+  },
+  {
+    query: "What is commit wait?",
+    note: "dense leads with chubby.md; only the literal term finds spanner.md",
+  },
+  {
+    query: "What are reversed hostnames used for?",
+    note: "dense misses bigtable.md entirely; fusion pulls it back into the evidence",
+  },
+  {
+    query: "How does Raft elect a leader?",
+    note: "control — fusion returns the same four raft.md chunks Standard already had: 100% overlap",
   },
   {
     query:
       "How does Dynamo achieve high write availability, and how does Raft handle log compaction?",
-    note: "two-part question — Multi-Pass loops for the half its first search missed (3 steps vs 8)",
+    note: "two-part question — Multi-Pass loops to three passes for the half its first search missed",
   },
 ];
 

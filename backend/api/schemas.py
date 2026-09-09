@@ -4,7 +4,16 @@ These are the source of truth. `frontend/lib/api.ts` mirrors them by hand; when 
 schema changes here, that file changes too or the frontend is lying about the API.
 """
 
-from pydantic import BaseModel, Field
+from typing import Annotated
+
+from pydantic import BaseModel, Field, StringConstraints
+
+# `min_length` on a plain `str` counts characters, not content, so "   " passed
+# validation and reached the model — which then invented its own question and
+# answered that. Stripping first makes the length check measure what was actually
+# asked. One alias rather than two Field definitions: the two request bodies have
+# to agree on what a query is, and duplicating the constraint invites them to drift.
+Query = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
 
 
 class Technique(BaseModel):
@@ -78,7 +87,7 @@ class UsageResponse(BaseModel):
 
 class RunRequest(BaseModel):
     technique: str = Field(description="Technique slug, e.g. 'standard-rag'.")
-    query: str = Field(min_length=1, max_length=2000)
+    query: Query
     model: str | None = Field(
         default=None,
         description="Model id from GET /api/models. Omit to use the configured default.",
@@ -113,7 +122,7 @@ class CompareRequest(BaseModel):
     same technique + different models (does the model differ?).
     """
 
-    query: str = Field(min_length=1, max_length=2000)
+    query: Query
     a: ComparisonSide
     b: ComparisonSide
 

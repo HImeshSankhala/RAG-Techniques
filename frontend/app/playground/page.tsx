@@ -30,8 +30,9 @@ export default async function PlaygroundPage() {
       <section className="max-w-2xl">
         <h1 className="text-3xl font-bold tracking-tight">Playground</h1>
         <p className="mt-4 leading-relaxed text-slate-600 dark:text-slate-400">
-          Ask a question against the indexed corpus — four documents on distributed systems
-          (Dynamo, Bigtable, Raft/Paxos, MapReduce). The answer comes back with the passages
+          Ask a question against the indexed corpus — nine documents on distributed systems
+          (Bigtable, Cassandra, Chubby, Dynamo, GFS, Kafka, MapReduce, Raft/Paxos, Spanner).
+          The answer comes back with the passages
           that produced it and a trace of every stage, so you can see <em>why</em> it answered
           that way, not just what it said.
         </p>

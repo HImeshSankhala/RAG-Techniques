@@ -10,9 +10,13 @@ corpus are rare exact terms, where dense retrieval returns **the wrong document 
 
 | Query | Answer lives in | Dense top hit | BM25 top hit |
 |---|---|---|---|
-| `hinted handoff` | `dynamo.md` | `raft.md` ✗ | `dynamo.md` ✓ |
-| `Chubby` | `bigtable.md` | `mapreduce.md` ✗ | `bigtable.md` ✓ |
-| `reversed hostnames` | `bigtable.md` | `dynamo.md` ✗ | `bigtable.md` ✓ |
+| `hinted handoff` | `dynamo.md`, `cassandra.md` | `raft.md#0` ✗ | `cassandra.md#4` ✓ |
+| `commit wait` | `spanner.md` | `chubby.md#2` ✗ | `spanner.md#4` ✓ |
+| `reversed hostnames` | `bigtable.md` | `dynamo.md#3` ✗ | `bigtable.md#0` ✓ |
+
+(Re-measured after the corpus grew from 4 documents to 9. The original table's `Chubby` row
+is gone: `chubby.md` now exists, dense ranks it first, and the row had started disproving
+its own point. This is the same expiry the section below is about, arriving on schedule.)
 
 Dense is not being stupid here. `hinted handoff` embeds into the region of "distributed
 systems failure handling", which genuinely neighbours Raft's discussion of leader failure.
@@ -22,9 +26,10 @@ in this exact chunk", which is the entirety of what the query asked.
 ## Why rank, not score
 
 The obvious merge is to combine scores, and it is wrong. Cosine similarity runs ~0–1 and
-clusters tightly; BM25 is unbounded and corpus-dependent. In the runs above, BM25 scores
-reached 5.28 while cosine sat at 0.42. Averaging those lets the larger scale win — an
-artefact of the scoring functions, not a claim about relevance.
+clusters tightly; BM25 is unbounded and corpus-dependent. In the runs above, BM25's top
+scores ran 5.7–6.1 while the corresponding cosine scores sat at 0.06–0.21. Averaging those
+lets the larger scale win — an artefact of the scoring functions, not a claim about
+relevance.
 
 Normalising first only moves the problem. Min-max makes the ranges match without making
 the *meanings* match, and it is unstable when one retriever returns a narrow band.
@@ -59,22 +64,34 @@ needs the index configuration attached, or it silently expires.
 
 ## Where RRF itself fails
 
-Summing reciprocal ranks means **a document found by both retrievers beats a document found
-by only one — at every `k`.** Usually right. Sometimes exactly wrong.
+Summing reciprocal ranks means **agreement outweighs confidence.** Usually right. Sometimes
+exactly wrong.
 
 Measured on `reversed hostnames`:
 
 - BM25 ranks the correct chunk `bigtable.md#0` **#1**; dense does not return it in 12
-- Dense ranks `dynamo.md#3` **#1**; BM25 has it at **#8**
-- Fused: `dynamo.md#3` wins, correct answer loses
+- `cassandra.md#0` is **#5 in both** lists — mediocre twice
+- Fused: `cassandra.md#0` wins, and `bigtable.md#0` falls out of the top 4 altogether
 
 ```
-dynamo.md#3    = 1/(k+1) + 1/(k+8)     found by both
-bigtable.md#0  = 1/(k+1)               found by one
+cassandra.md#0 = 1/(k+5) + 1/(k+5)     found by both, unimpressively
+bigtable.md#0  = 1/(k+1)               found by one, decisively
 ```
 
-The second term is always positive. I swept `k` from 1 to 200 — the winner never changes.
-This is structural, not a tuning failure.
+Two fifth places beat one first place whenever `2/(k+5) > 1/(k+1)` — that is, whenever
+`k > 3`. I swept `k`: at `k ≤ 3` the correct chunk is back in the merged top 4, and from
+`k = 4` up it is gone.
+
+That is *not* the escape hatch it looks like. `k` is the damping that stops one retriever
+unilaterally deciding the merge — the reason the standard value is 60. Setting `k = 2` to
+rescue this query re-creates the failure RRF's damping exists to prevent. The tuning knob
+trades one failure mode for its mirror image rather than removing either.
+
+(On the original 4-document corpus this section read differently: `dynamo.md#3` was dense #1
+*and* BM25 #8, so it beat `bigtable.md#0` at every `k` by sharing the same first term. The
+9-document corpus broke that specific arithmetic while leaving the lesson intact — worth
+noting, because the *unconditional* version of the claim is what `test_fusion.py` pins, and
+that test uses synthetic ranks precisely so it does not expire with the index.)
 
 **RRF rewards consensus over conviction.** When one retriever is authoritative for a *kind*
 of query, unweighted fusion dilutes it with the other's confident wrongness. The fix is
@@ -84,33 +101,64 @@ A test pins this behaviour so it stays visible rather than being rediscovered as
 
 ## Fusion is not strictly better
 
-Precision@1 over eight queries:
+Eight queries — four rare exact terms, four paraphrased questions — with the answering
+document written down before measuring, so the set is auditable rather than remembered:
+
+| Query | Answer lives in |
+|---|---|
+| `hinted handoff` | `dynamo.md`, `cassandra.md` |
+| `reversed hostnames` | `bigtable.md` |
+| `commit wait` | `spanner.md` |
+| `vector clocks` | `dynamo.md` |
+| `How does a leader keep followers up to date?` | `raft.md` |
+| `What happens when a worker machine fails mid-job?` | `mapreduce.md` |
+| `How is a large file split up for storage?` | `gfs.md` |
+| `How do writes stay available when a replica is down?` | `dynamo.md`, `cassandra.md` |
 
 | | dense | BM25 | fused |
 |---|---|---|---|
-| correct top hit | 4/8 | **8/8** | 7/8 |
+| Precision@1 | 3/8 | **7/8** | 3/8 |
+| Recall@4 | 5/8 | **8/8** | 7/8 |
 
-Fusion nearly doubles dense. It also **loses to BM25 alone** on this set.
+**Fusion does not improve precision@1 on this set at all.** That surprised me, and the
+reason is the section above: RRF reorders by consensus, and where the two retrievers
+disagree hardest — the exact-term queries fusion is supposed to fix — consensus lands on a
+chunk neither retriever would have put first.
 
-That result needs its caveat stated plainly: I chose several of these queries specifically
-to find divergence, so the set is biased toward rare exact terms — BM25's home ground. A
-set weighted toward paraphrased questions would invert it. The honest summary is that
-**fusion buys robustness across query types, not peak precision on any one type.** If you
-know your traffic is all exact-term lookups, ship BM25 and skip the vector index.
+**It does improve recall@4, 5/8 to 7/8.** That is the metric that matters, and I had been
+reporting the wrong one. All four chunks go into the prompt; the model never sees the
+ranking. Precision@1 is the right measure for a search results page and the wrong measure
+for a RAG context window.
 
-## Why the end-to-end answers barely changed
+Same caveat as before, stated plainly: half these queries were chosen to find divergence, so
+the set leans toward BM25's home ground. **Fusion buys robustness across query types, not
+peak precision on any one type.** If you know your traffic is all exact-term lookups, ship
+BM25 and skip the vector index.
 
-Running Standard vs Fusion through `/api/run` on `hinted handoff`, both produced correct
-answers. Fusion promoted `dynamo.md#2` from rank 3 to rank 1, but Standard's top-4 already
-contained it.
+## Why the end-to-end answers barely changed — and then stopped barely changing
 
-At `top_k=4` over an 18-chunk corpus, every retrieval pulls **22% of the entire corpus**.
-Ranking has to be badly wrong before the right chunk falls out of the window entirely.
+On the original 4-document, 18-chunk corpus, Standard and Fusion produced the same answer to
+`hinted handoff`. Fusion promoted `dynamo.md#2` from rank 3 to rank 1, but Standard's top-4
+already contained it, so the model saw the same evidence either way.
 
-This is a property of the demo corpus, not of the technique, and it is worth being explicit
-about: ranking improvements show up in *answers* when `top_k` covers a small fraction of the
-corpus. On a realistic index the same rank-3-to-rank-1 promotion is often the difference
-between a grounded answer and a confidently wrong one.
+The reason was corpus size. At `top_k=4` over 18 chunks, every retrieval pulls **22% of the
+entire corpus**. Ranking has to be badly wrong before the right chunk falls out of a window
+that wide.
+
+Re-measured on the 9-document, 43-chunk corpus, `top_k=4` is **9%**, and the same query now
+behaves completely differently:
+
+- Dense top-4: `raft.md#0`, `raft.md#1`, `chubby.md#2`, `chubby.md#0` — **no Dynamo at all**
+- `dynamo.md#2` is dense **#7**, outside the window
+- Fused top-4: `dynamo.md#2`, `chubby.md#0`, `chubby.md#1`, `raft.md#0`
+
+Fusion is no longer reordering evidence Standard already had; it is supplying evidence
+Standard never saw. That is the difference between a ranking improvement and a retrieval
+improvement, and the only thing that changed is how much of the corpus fits in `top_k`.
+
+The general lesson: **ranking improvements show up in answers only when `top_k` covers a
+small fraction of the corpus.** A demo index small enough to be convenient is also small
+enough to hide the technique it is demonstrating.
 
 ## Scatter-gather
 

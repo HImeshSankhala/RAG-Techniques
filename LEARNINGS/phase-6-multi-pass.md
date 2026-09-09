@@ -37,10 +37,15 @@ a paid backend every turn is money. Three independent conditions stop it:
 matters — the first two depend on a model behaving sensibly, and the whole point of
 this phase is that it sometimes does not.
 
-`termination_reason` reports which fired: `single_pass`, `gaps_closed`,
+`termination_reason` reports which fired: `no_gaps_found`, `gaps_closed`,
 `no_new_evidence`, `max_iterations`. That field was defined back in Phase 1 as a
 fixed `Metadata` slot with only one possible value; this is the phase it starts
 carrying information.
+
+(`no_gaps_found` was originally `single_pass`, which was a mistake: Standard and
+Fusion emit `single_pass` because they have no loop at all. Sharing the string made
+"the critique ran and found nothing" indistinguishable from "there is no critique"
+in the compare view — the one place the difference is the whole point.)
 
 ## The cap moved to config, and the learn page was right
 
@@ -111,7 +116,8 @@ rather than errors. `COMPLETE` is a perfectly well-formed answer. Nothing raised
 nothing logged, every test green — the technique simply did not do its one job.
 
 **This is also the phase's argument for the `steps` trace.** The only visible symptom
-was `reason=single_pass` on a question about a system the corpus has never heard of.
+was `reason=no_gaps_found` (then spelled `single_pass`) on a question about a system
+the corpus has never heard of.
 
 ### The same bug again, one layer down
 
@@ -197,6 +203,11 @@ seeing some retrieved context and answers confidently anyway.
 
 ## Measured, once the critique actually worked
 
+> Everything in this section was measured against the **18-chunk, 4-document**
+> corpus this phase was built on. The corpus was later expanded to 43 chunks
+> across 9 documents, which changes some of these numbers and makes one of the
+> observations below obsolete in a useful way — noted inline.
+
 `"How does Dynamo achieve high write availability, and how does Raft handle log
 compaction?"`, local qwen3:8b:
 
@@ -233,6 +244,19 @@ criterion exists rather than trusting the critique to converge.
 everything there is, so pass 1 usually already holds the relevant documents and a gap
 query rarely ranks anything new. The path is unit-tested, but it has not fired against
 the real index, and that is worth knowing before treating this technique as proven.
+
+> **Update, after the corpus grew to 43 chunks / 9 documents.** `top_k` of 4 is now
+> ~9%, and the same query loops the same way: 3 passes, 4 calls, 40.2s against
+> Standard's 3 steps and 9.5s. `gaps_closed` *still* has not fired — this run ended
+> `no_new_evidence` again, because the critique repeated a gap it had already had
+> filled. So the earlier diagnosis was incomplete: corpus size was not the only thing
+> keeping that path unreachable. The critique failing to notice a filled gap is the
+> more fundamental cause, and it is a property of the model, not the index.
+>
+> The Spanner example above is also obsolete as a *demonstration*: `spanner.md` now
+> exists, so that query retrieves real evidence and correctly terminates
+> `no_gaps_found`. The measurement stands as a record of the bug; it is no longer a
+> reproduction of it.
 
 ## Refactor: `core/prompting.py`
 

@@ -70,7 +70,9 @@ def test_stops_after_one_pass_when_the_critique_finds_nothing(script) -> None:
 
     result = MultiPassRAG().run(QUERY)
 
-    assert result.metadata.termination_reason == "single_pass"
+    # Not "single_pass" — that is what a technique with no loop emits. This says
+    # the critique ran and found nothing, which is a different fact.
+    assert result.metadata.termination_reason == "no_gaps_found"
     assert result.metadata.retrieval_passes == 1
     assert result.metadata.llm_calls == 2  # draft + critique
 
@@ -160,6 +162,23 @@ def test_the_critique_is_shown_the_passages_and_the_draft(script) -> None:
     assert "Draft citing dynamo.md." in critique_prompt
     for chunk in result.retrieved_chunks:
         assert chunk.text in critique_prompt
+
+
+def test_the_second_critique_is_told_what_the_first_already_asked_for(script) -> None:
+    """The loop needs a memory of its own questions.
+
+    Measured without it: pass 1 asked "Kafka network partition behavior" and pass 2
+    asked "Kafka's behavior during a network partition" — the same gap reworded. The
+    `no_new_evidence` guard only fires on zero new chunks, and a paraphrase retrieves
+    a slightly different set, so the loop ran to the hard cap every time.
+    """
+    seen = script("Draft.", "hinted handoff replica failure", "Redraft.", "COMPLETE")
+
+    MultiPassRAG().run(QUERY)
+    second_critique_prompt = seen[3][0]
+
+    assert "hinted handoff replica failure" in second_critique_prompt
+    assert "Already searched for" in second_critique_prompt
 
 
 def test_steps_trace_narrates_the_loop(script) -> None:

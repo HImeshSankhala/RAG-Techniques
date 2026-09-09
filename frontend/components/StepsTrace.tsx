@@ -1,4 +1,5 @@
 import type { Step } from "@/lib/api";
+import { formatMs } from "@/lib/format";
 
 /**
  * The stage-by-stage trace of a run, with a bar per step proportional to its
@@ -44,8 +45,4 @@ export function StepsTrace({ steps }: { steps: Step[] }) {
       ))}
     </ol>
   );
-}
-
-function formatMs(ms: number): string {
-  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
 }

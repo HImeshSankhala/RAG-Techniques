@@ -14,9 +14,12 @@ term, and dense retrieval returns **the wrong document entirely**:
 
 | Query | Answer lives in | Dense top hit | BM25 top hit |
 |---|---|---|---|
-| `hinted handoff` | `dynamo.md` | `raft.md` ✗ | `dynamo.md` ✓ |
-| `Chubby` | `bigtable.md` | `mapreduce.md` ✗ | `bigtable.md` ✓ |
-| `reversed hostnames` | `bigtable.md` | `dynamo.md` ✗ | `bigtable.md` ✓ |
+| `hinted handoff` | `dynamo.md`, `cassandra.md` | `raft.md#0` ✗ | `cassandra.md#4` ✓ |
+| `commit wait` | `spanner.md` | `chubby.md#2` ✗ | `spanner.md#4` ✓ |
+| `reversed hostnames` | `bigtable.md` | `dynamo.md#3` ✗ | `bigtable.md#0` ✓ |
+
+(`cassandra.md#4` is a correct hit: Cassandra inherits hinted handoff from Dynamo and names
+it as such.)
 
 Why this happens: each query is one or two load-bearing tokens with little surrounding
 context. Embedded into 384 dimensions, `hinted handoff` lands somewhere in the region of
@@ -25,9 +28,12 @@ leader failure. The embedding is not wrong about the *topic*. It simply has no w
 represent "this exact phrase appears in this exact chunk", and that is the whole of what
 the query was asking.
 
-BM25 has the exact opposite profile. It nails all three, and would completely miss the
-vector-clocks question that dense retrieval answers easily — that query shares almost no
-vocabulary with the passage that answers it.
+BM25 has the exact opposite profile. It nails all three, and misses the questions whose
+wording shares no vocabulary with the passage that answers them. Measured: `How is a large
+file split up for storage?` returns `gfs.md#1` from dense — the chunk that says files are
+divided into fixed-size 64 MB *chunks* — and `bigtable.md#1` from BM25, which is about
+column families. The question says "split up"; the answer says "chunk". Term overlap has
+nothing to work with, and meaning is all that is left.
 
 ## How it works
 
@@ -75,25 +81,27 @@ other retriever missed entirely.
 
 ## Where RRF itself fails
 
-Summing reciprocal ranks means **a document found by both retrievers beats a document found
-by only one — always, at any `k`.** That is usually the behaviour you want, and sometimes
-it is exactly wrong.
+Summing reciprocal ranks means **agreement is worth more than confidence.** That is usually
+the behaviour you want, and sometimes it is exactly wrong.
 
 Measured here, on `reversed hostnames`:
 
 - BM25 ranks the correct chunk (`bigtable.md#0`) **#1**, and dense does not return it at all
-- Dense ranks `dynamo.md#3` **#1**; BM25 also has it, down at **#8**
-- Fused: `dynamo.md#3` wins, and the correct chunk loses
+- `cassandra.md#0` is merely **#5** in *both* lists — mediocre twice over
+- Fused: `cassandra.md#0` wins, and the correct chunk drops out of the top 4 entirely
 
-The arithmetic is unavoidable:
+The arithmetic:
 
 ```
-dynamo.md#3    = 1/(k+1) + 1/(k+8)     found by both
-bigtable.md#0  = 1/(k+1)               found by one
+cassandra.md#0 = 1/(k+5) + 1/(k+5)     found by both, unimpressively
+bigtable.md#0  = 1/(k+1)               found by one, decisively
 ```
 
-The second term is always positive, so no choice of `k` rescues the correct answer.
-Sweeping `k` from 1 to 200 changes nothing.
+Two fifth places beat one first place whenever `2/(k+5) > 1/(k+1)`, i.e. whenever `k > 3`.
+Sweeping `k` confirms it: at `k ≤ 3` the correct chunk is back in the merged top 4, and from
+`k = 4` upward it is gone. But `k` is not free to tune — it *is* the damping that stops one
+retriever unilaterally deciding the result, which is the reason the standard value is 60.
+Lowering it to rescue this query trades this failure for its mirror image.
 
 **The lesson: RRF rewards consensus over conviction.** When one retriever is authoritative
 for a *kind* of query — BM25 for rare exact terms — plain unweighted fusion dilutes it with
@@ -117,19 +125,39 @@ generation, so adding a second retriever costs almost nothing end to end.
 
 ## Fusion is not strictly better
 
-Precision@1 measured over eight queries against this corpus:
+Measured over eight queries against this corpus — four rare exact terms, four paraphrased
+questions, each with the document that answers it recorded up front:
+
+| Query | Answer lives in |
+|---|---|
+| `hinted handoff` | `dynamo.md`, `cassandra.md` |
+| `reversed hostnames` | `bigtable.md` |
+| `commit wait` | `spanner.md` |
+| `vector clocks` | `dynamo.md` |
+| `How does a leader keep followers up to date?` | `raft.md` |
+| `What happens when a worker machine fails mid-job?` | `mapreduce.md` |
+| `How is a large file split up for storage?` | `gfs.md` |
+| `How do writes stay available when a replica is down?` | `dynamo.md`, `cassandra.md` |
 
 | | dense | BM25 | fused |
 |---|---|---|---|
-| correct top hit | 4/8 | **8/8** | 7/8 |
+| Precision@1 — right document ranked first | 3/8 | **7/8** | 3/8 |
+| Recall@4 — right document anywhere in the top 4 | 5/8 | **8/8** | 7/8 |
 
-Fusion nearly doubles dense retrieval — and loses to BM25 alone.
+Two things fall out of that, and the second is the one that matters.
 
-The caveat matters: several of those queries were chosen to find divergence, so the set
-leans toward rare exact terms, which is BM25's home ground. A set of paraphrased questions
-would invert the result. **Fusion buys robustness across query types, not peak precision on
-any one type.** If you know your traffic is all exact-term lookups, ship BM25 and skip the
-vector index entirely.
+**Fusion does not improve precision@1 here at all.** RRF reorders by consensus, and on the
+exact-term queries the two retrievers disagree so completely that consensus lands on
+something neither would have picked first.
+
+**Fusion does improve recall@4, 5/8 to 7/8** — and recall@4 is the metric a RAG pipeline is
+actually graded on, because all four chunks go into the prompt. The model does not care
+which one was ranked first; it cares whether the answer is in the context at all.
+
+The caveat still applies: half of these queries were chosen to find divergence, so the set
+leans toward rare exact terms, which is BM25's home ground. **Fusion buys robustness across
+query types, not peak precision on any one type.** If you know your traffic is all
+exact-term lookups, ship BM25 and skip the vector index entirely.
 
 ## When to use it
 

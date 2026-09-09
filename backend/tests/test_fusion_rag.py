@@ -70,23 +70,30 @@ def test_still_one_retrieval_pass(stub_llm: list[str]) -> None:
 def test_bm25_finds_exact_terms_dense_misses() -> None:
     """The reason this technique exists, asserted against the real corpus.
 
-    `hinted handoff` is a Dynamo concept. Dense retrieval puts raft.md on top —
-    the right topic, the wrong document. BM25 gets it right.
+    `hinted handoff` is a rare literal term. Dense retrieval leads with raft.md —
+    right topic, wrong document, and the phrase appears nowhere in it. BM25 leads
+    with a passage that actually contains the words.
+
+    Asserted on the text rather than on a filename. The first version of this test
+    pinned `dynamo.md`, and adding cassandra.md broke it — Cassandra inherits
+    hinted handoff from Dynamo, so BM25 now ranks that passage first. Both answers
+    are correct; the claim being tested is about which retriever finds the literal
+    term, not about which file happens to win.
     """
     from core import embeddings
 
     dense = vectorstore.query(embeddings.embed_query("hinted handoff"), 4)
     sparse = keyword.query("hinted handoff", 4)
 
-    assert dense[0].source != "dynamo.md", "dense unexpectedly got this right"
-    assert sparse[0].source == "dynamo.md", "BM25 should nail an exact rare term"
+    assert "hinted handoff" not in dense[0].text.lower(), "dense unexpectedly got this right"
+    assert "hinted handoff" in sparse[0].text.lower(), "BM25 should nail an exact rare term"
 
 
 def test_fusion_recovers_the_correct_document(stub_llm: list[str]) -> None:
-    """End to end: the merged result leads with the right document even though
-    dense retrieval alone did not."""
+    """End to end: the merged result leads with a passage that actually contains
+    the term, even though dense retrieval alone did not."""
     result = FusionRAG().run("hinted handoff")
-    assert result.retrieved_chunks[0].source == "dynamo.md"
+    assert "hinted handoff" in result.retrieved_chunks[0].text.lower()
 
 
 def test_empty_index_is_reported_not_raised(monkeypatch: pytest.MonkeyPatch) -> None:
