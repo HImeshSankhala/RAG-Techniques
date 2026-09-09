@@ -1,4 +1,5 @@
 import type { ComparisonDiff, RunResponse } from "@/lib/api";
+import { formatMs, money } from "@/lib/format";
 
 /**
  * The row that turns two results into a comparison.
@@ -31,7 +32,7 @@ export function DiffSummary({
 
       <p className="mt-3 text-sm leading-relaxed">{summarise(diff, a, b, noEvidence)}</p>
 
-      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-5 grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
         <Metric
           label="Evidence overlap"
           value={noEvidence ? "—" : `${diff.chunk_overlap_pct}%`}
@@ -51,6 +52,14 @@ export function DiffSummary({
           label="LLM calls"
           value={diff.llm_calls_delta === 0 ? "same" : formatDelta(diff.llm_calls_delta, "")}
           detail={`${a.metadata.llm_calls} vs ${b.metadata.llm_calls}`}
+        />
+        {/* The shape of the run, not its cost. Two techniques can make the same
+            number of LLM calls and still differ here — this is the column where
+            Multi-Pass's loop is visible as structure rather than as latency. */}
+        <Metric
+          label="Steps"
+          value={diff.steps_delta === 0 ? "same" : formatDelta(diff.steps_delta, "")}
+          detail={`${a.steps.length} vs ${b.steps.length}`}
         />
         <Metric
           label="Cost"
@@ -164,12 +173,4 @@ function formatDelta(value: number, unit: string, humanise = false): string {
   const magnitude = Math.abs(value);
   if (humanise && magnitude >= 1000) return `${sign}${(magnitude / 1000).toFixed(1)}s`;
   return `${sign}${Math.round(magnitude)}${unit}`;
-}
-
-function formatMs(ms: number): string {
-  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
-}
-
-function money(usd: number): string {
-  return usd > 0 ? `$${usd.toFixed(4)}` : "free";
 }

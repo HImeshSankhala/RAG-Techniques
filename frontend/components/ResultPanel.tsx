@@ -1,4 +1,5 @@
 import type { Chunk, RunResponse } from "@/lib/api";
+import { formatMs } from "@/lib/format";
 import { StepsTrace } from "@/components/StepsTrace";
 
 /**
@@ -34,6 +35,11 @@ export function ResultPanel({ result }: { result: RunResponse }) {
           // usually means it answered from its own knowledge instead of the context.
           tone={metadata.groundedness === 0 ? "warn" : "neutral"}
         />
+        {/* Multi-Pass's entire signal. Every pipeline has populated these since
+            Phase 1 and nothing rendered them, so the technique whose whole point
+            is looping looked, in the UI, exactly like the ones that do not. */}
+        <Badge label="passes" value={String(metadata.retrieval_passes)} />
+        <Badge label="stopped" value={metadata.termination_reason} />
       </section>
 
       <details className="group rounded-lg border border-slate-200 dark:border-slate-800">
@@ -98,8 +104,4 @@ function Badge({
       <span className="text-slate-400">{label}</span> <span className="font-medium">{value}</span>
     </span>
   );
-}
-
-function formatMs(ms: number): string {
-  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
 }
