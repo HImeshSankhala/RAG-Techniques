@@ -124,6 +124,13 @@ class MultiPassRAG(RAGPipeline):
         llm_calls = 1
         passes = 1
         reason = "max_iterations"
+        # Every gap the critique has already asked for. Without this the loop has
+        # no memory: measured, pass 1 asked "Kafka network partition behavior" and
+        # pass 2 asked "Kafka's behavior during a network partition" — the same
+        # gap, reworded. `no_new_evidence` only fires on zero new chunks, and a
+        # reworded query retrieves a slightly different set, so nothing stopped it
+        # short of the hard cap.
+        asked: list[str] = []
 
         while passes < settings.multi_pass_max_passes:
             with steps.record(f"Critique draft (pass {passes})") as step:
@@ -133,7 +140,7 @@ class MultiPassRAG(RAGPipeline):
                 # the loop is a no-op. Measured — see core/llm.py.
                 critique = llm.generate(
                     CRITIQUE_SYSTEM,
-                    _build_critique_prompt(query, chunks, response.text),
+                    _build_critique_prompt(query, chunks, response.text, asked),
                     model=model,
                     helper=True,
                     reason=True,
@@ -143,6 +150,7 @@ class MultiPassRAG(RAGPipeline):
                 tokens_out += critique.output_tokens
 
                 gaps = _parse_gaps(critique.text)
+                asked.extend(gaps)
                 if gaps:
                     step.detail = f"gaps: {'; '.join(gaps)}"
                 elif critique.text.strip():
@@ -158,7 +166,12 @@ class MultiPassRAG(RAGPipeline):
             if not gaps:
                 # Distinguishing these two matters in the compare view: one says
                 # the extra machinery was never needed, the other says it worked.
-                reason = "single_pass" if passes == 1 else "gaps_closed"
+                #
+                # Not "single_pass": Standard and Fusion emit that when they have
+                # no loop at all, so reusing it here would make "the critique ran
+                # and found nothing" indistinguishable from "there is no critique",
+                # which is exactly the difference the compare view exists to show.
+                reason = "no_gaps_found" if passes == 1 else "gaps_closed"
                 break
 
             with steps.record(f"Retrieve for gaps (pass {passes + 1})") as step:
@@ -219,14 +232,30 @@ class MultiPassRAG(RAGPipeline):
         )
 
 
-def _build_critique_prompt(query: str, chunks: list[Chunk], draft: str) -> str:
-    """Show the critique what the drafter saw, plus what it wrote.
+def _build_critique_prompt(
+    query: str, chunks: list[Chunk], draft: str, asked: list[str]
+) -> str:
+    """Show the critique what the drafter saw, what it wrote, and what has already
+    been searched for.
 
     The passages have to be included: asking "is anything missing?" without them
     invites the model to compare the draft against its own pretrained knowledge
     and report every fact the corpus happens not to contain.
+
+    `asked` is the loop's memory. The alternative fixes are both worse: dropping
+    gaps whose text repeats an earlier one is defeated by any paraphrase (which is
+    exactly what the model produces), and requiring N new chunks before continuing
+    is a magic number fitted to one observation. Telling the critique what has
+    already failed lets it answer COMPLETE for the right reason.
     """
-    return f"{build_prompt(query, chunks)}\n\nDraft answer:\n{draft}"
+    prompt = f"{build_prompt(query, chunks)}\n\nDraft answer:\n{draft}"
+    if asked:
+        prompt += (
+            "\n\nAlready searched for, without success:\n"
+            + "\n".join(f"- {a}" for a in asked)
+            + "\nDo not ask for these again. If they are the only gap, reply COMPLETE."
+        )
+    return prompt
 
 
 # A search query is keywords, so anything long or sentence-shaped is the model

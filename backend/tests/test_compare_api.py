@@ -110,3 +110,12 @@ def test_unknown_technique_surfaces_its_status() -> None:
 
 def test_rejects_an_empty_query() -> None:
     assert compare("", {"technique": "standard-rag"}, {"technique": "fusion-rag"}).status_code == 422
+
+
+def test_rejects_a_whitespace_only_query() -> None:
+    """Whitespace is not a question. Both request bodies share one constraint so
+    they cannot disagree about that."""
+    assert (
+        compare("   ", {"technique": "standard-rag"}, {"technique": "fusion-rag"}).status_code
+        == 422
+    )

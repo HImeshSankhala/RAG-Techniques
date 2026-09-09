@@ -142,7 +142,7 @@ class Metadata:                        # fixed fields — the compare diff row l
     llm_calls: int
     retrieval_passes: int
     tokens_in: int; tokens_out: int
-    termination_reason: str            # "single_pass" | "gaps_closed" | "max_iterations" | ...
+    termination_reason: str            # "single_pass" (no loop) | "no_gaps_found" | "gaps_closed" | "max_iterations" | ...
     groundedness: float                # fraction of retrieved sources cited (compliance proxy)
     cost_estimate_usd: float           # 0.0 on the local backend
 
