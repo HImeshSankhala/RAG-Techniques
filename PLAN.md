@@ -104,7 +104,7 @@ rag-lab/
 │   │       ├── run.py           # POST /api/run {technique, query}
 │   │       ├── compare.py       # POST /api/compare {technique_a, technique_b, query}
 │   │       └── feedback.py      # POST /api/feedback (for feedback RAG)
-│   ├── data/sample_docs/        # 3–5 docs users query against
+│   ├── data/sample_docs/        # 9 docs users query against
 │   └── tests/
 ├── frontend/
 │   ├── package.json
