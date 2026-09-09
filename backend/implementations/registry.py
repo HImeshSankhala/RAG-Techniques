@@ -9,6 +9,7 @@ source of truth waiting to drift from the first.
 from dataclasses import dataclass
 
 from core.pipeline import RAGPipeline
+from implementations.auto_rag import AutoRAG
 from implementations.fusion_rag import FusionRAG
 from implementations.multi_pass_rag import MultiPassRAG
 from implementations.standard_rag import StandardRAG
@@ -19,6 +20,7 @@ PIPELINES: dict[str, RAGPipeline] = {
     StandardRAG.name: StandardRAG(),
     FusionRAG.name: FusionRAG(),
     MultiPassRAG.name: MultiPassRAG(),
+    AutoRAG.name: AutoRAG(),
 }
 
 
