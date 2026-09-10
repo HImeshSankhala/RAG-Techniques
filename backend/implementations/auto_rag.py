@@ -94,11 +94,6 @@ _ROUTE_SCALES = {"vector": "cosine", "keyword": "BM25", "hybrid": "RRF"}
 
 class AutoRAG(RAGPipeline):
     name = "auto-rag"
-    display_name = "Auto RAG"
-    tagline = (
-        "A cheap router call picks the retrieval strategy per query: "
-        "vector, keyword, or hybrid."
-    )
 
     def run(self, query: str, model: str | None = None) -> RAGResult:
         steps = StepRecorder()

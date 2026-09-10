@@ -23,10 +23,6 @@ from core.prompting import SYSTEM_PROMPT, build_prompt, groundedness
 
 class FusionRAG(RAGPipeline):
     name = "fusion-rag"
-    display_name = "Fusion RAG"
-    tagline = (
-        "Run dense and keyword retrieval in parallel, then merge by rank instead of score."
-    )
 
     def run(self, query: str, model: str | None = None) -> RAGResult:
         steps = StepRecorder()

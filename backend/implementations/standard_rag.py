@@ -19,11 +19,6 @@ from core.prompting import SYSTEM_PROMPT, build_prompt, groundedness
 
 class StandardRAG(RAGPipeline):
     name = "standard-rag"
-    display_name = "Standard RAG"
-    tagline = (
-        "Embed the query, retrieve top-k chunks, answer from them. "
-        "The baseline everything else is measured against."
-    )
 
     def run(self, query: str, model: str | None = None) -> RAGResult:
         steps = StepRecorder()
