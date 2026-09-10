@@ -8,20 +8,17 @@ The shape is scatter-gather: fan out to independent retrievers, then combine.
 The retrievers never see each other, which is what makes them safe to run
 concurrently and easy to add to — a third retriever is one more entry in the list
 handed to `reciprocal_rank_fusion`.
+
+The mechanism lives in `core/retrieval.py`, not here, because Auto RAG's hybrid
+route runs the identical scatter-gather-and-merge. What is left in this file is
+what a technique is actually for: naming the stages and narrating them.
 """
 
-from concurrent.futures import ThreadPoolExecutor
-
-from core import embeddings, keyword, llm, vectorstore
+from core import llm, retrieval
 from core.config import settings
-from core.fusion import RRF_K, reciprocal_rank_fusion
-from core.pipeline import Chunk, Metadata, RAGPipeline, RAGResult, StepRecorder
+from core.fusion import RRF_K
+from core.pipeline import Metadata, RAGPipeline, RAGResult, StepRecorder
 from core.prompting import SYSTEM_PROMPT, build_prompt, groundedness
-
-# Each retriever returns more than the final top_k so fusion has room to work.
-# If both returned exactly top_k, a chunk ranked 5th by one and 1st by the other
-# could never enter the merge — the very case fusion exists to catch.
-CANDIDATE_MULTIPLIER = 3
 
 
 class FusionRAG(RAGPipeline):
@@ -34,17 +31,16 @@ class FusionRAG(RAGPipeline):
     def run(self, query: str, model: str | None = None) -> RAGResult:
         steps = StepRecorder()
         model = model or settings.default_model
-        candidates = settings.top_k * CANDIDATE_MULTIPLIER
 
         with steps.record("Retrieve (dense + BM25 in parallel)") as step:
-            # Both retrievers are I/O- and C-bound (Chroma's HNSW walk, numpy in
-            # rank_bm25), so threads genuinely overlap here despite the GIL.
-            # Scatter-gather is only worth the machinery if the branches run at
-            # the same time.
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                dense_future = pool.submit(self._dense, query, candidates)
-                sparse_future = pool.submit(keyword.query, query, candidates)
-                dense, sparse = dense_future.result(), sparse_future.result()
+            # Scatter-gather and the merge both live in core.retrieval.hybrid,
+            # because Auto RAG's hybrid route needs the identical thing. That
+            # means the fuse is timed inside this step rather than the next one;
+            # RRF over 24 candidates is microseconds against two retrievals, so
+            # the split below is about naming the two ideas for a reader, not
+            # about attributing cost.
+            result = retrieval.hybrid(query, settings.top_k)
+            dense, sparse, chunks = result.dense, result.sparse, result.fused
 
             step.detail = (
                 f"dense {len(dense)} (top {dense[0].chunk_id if dense else '—'}), "
@@ -52,8 +48,6 @@ class FusionRAG(RAGPipeline):
             )
 
         with steps.record("Fuse by reciprocal rank") as step:
-            chunks = reciprocal_rank_fusion([dense, sparse], settings.top_k)
-
             # The interesting number for a reader: how much the two retrievers
             # actually disagreed. Full overlap means fusion changed nothing and
             # Standard RAG would have answered identically.
@@ -115,7 +109,3 @@ class FusionRAG(RAGPipeline):
                 cost_estimate_usd=round(cost, 6),
             ),
         )
-
-    @staticmethod
-    def _dense(query: str, top_k: int) -> list[Chunk]:
-        return vectorstore.query(embeddings.embed_query(query), top_k)
