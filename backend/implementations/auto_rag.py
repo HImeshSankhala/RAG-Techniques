@@ -23,10 +23,12 @@ is a sub-second retrieval. A thinking router would cost twenty times the retriev
 it is choosing between, and Auto RAG would become a strictly slower Fusion RAG.
 See `core/llm.py`.
 
-Note what the router is NOT: an accuracy improvement. Its ceiling is whatever the
-best single path would have returned, and hybrid already reaches that ceiling on
-every query. Routing buys latency, and it buys it by risking the occasional wrong
-path. Compared against Fusion RAG is where that trade shows up honestly.
+Note what the router is NOT: a guaranteed accuracy improvement. Its ceiling is
+whatever the best single path would have returned, and picking the wrong path
+forfeits that. Routing buys latency, and it buys it by risking a wrong choice.
+(Routing can also beat always-hybrid, because hybrid is not a superset of the
+specialists — see FALLBACK_ROUTE below.) Compared against Fusion RAG is where
+that trade shows up honestly.
 """
 
 from core import keyword, llm, retrieval
@@ -39,12 +41,17 @@ ROUTES = ("vector", "keyword", "hybrid")
 
 # Unparseable or unexpected router output falls back to hybrid.
 #
-# Hybrid rather than a specialist, because the routes are not peers: hybrid runs
-# both retrievers and fuses, so its result set is a superset of what either
-# specialist would have found. Choosing it can only cost the extra retrieval —
-# never recall. Falling back to a specialist means betting on the exact question
-# the router just failed to answer, and losing that bet drops the right chunk
-# entirely.
+# Hybrid is the best-hedged single choice, NOT a superset. RRF re-ranks and then
+# truncates to top_k, so fusing can push out a chunk a specialist ranked #1:
+# measured on this corpus, `reversed hostnames` gives BM25 all four bigtable.md
+# chunks, while hybrid returns cassandra#0, chubby#2, cassandra#3, dynamo#3 — the
+# gold document is gone. See frontend/content/fusion-rag.mdx, which documents this
+# as RRF's failure case.
+#
+# It is still the right fallback: falling back to a specialist means betting on
+# the exact question the router just failed to answer, and the wrong specialist
+# misses everything the other one would have found. Hybrid bounds the damage
+# instead of eliminating it.
 #
 # Retrieval here is local and free, so the fallback is cheap. That it is a
 # corpus- and deployment-dependent judgement rather than a law is the point: with
@@ -77,6 +84,12 @@ _ROUTE_LABELS = {
     "keyword": "BM25 only",
     "hybrid": "dense + BM25, fused by rank",
 }
+
+# Each route's top score comes off a different ruler: cosine similarity (~0.61),
+# raw BM25 (~10.07), and RRF's sum of 1/(k+rank) (~0.031). An unlabelled "best
+# score" invites the reader to compare them, and "scores are only comparable
+# within one retriever" is the whole Phase 4 lesson — so the trace names the scale.
+_ROUTE_SCALES = {"vector": "cosine", "keyword": "BM25", "hybrid": "RRF"}
 
 
 class AutoRAG(RAGPipeline):
@@ -172,9 +185,13 @@ class AutoRAG(RAGPipeline):
                 retrieval_passes=1,
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
-                # The route is the lesson, so it goes in the field the compare
-                # view already lines up side by side, not only in the trace.
-                termination_reason=f"routed_{route}" if understood else f"routed_{route}_fallback",
+                # A loop outcome, not a route. Auto RAG has no loop, so it stops
+                # the same way Standard and Fusion do. Putting `routed_hybrid`
+                # here made the compare view line a route up against a loop
+                # outcome in one column, which compares nothing. The route — and
+                # whether it was a fallback — lives in the trace, which is where
+                # a per-run decision belongs.
+                termination_reason="single_pass",
                 groundedness=groundedness(response.text, chunks),
                 cost_estimate_usd=round(cost, 6),
             ),
@@ -188,17 +205,19 @@ def _retrieve(route: str, query: str) -> tuple[list[Chunk], str]:
     core/keyword.py), so every route reaches the pipeline's empty-index branch
     the same way.
     """
+    scale = _ROUTE_SCALES[route]
+
     if route == "vector":
         chunks = retrieval.dense(query, settings.top_k)
-        return chunks, _sources_detail(chunks)
+        return chunks, _sources_detail(chunks, scale)
 
     if route == "keyword":
         chunks = keyword.query(query, settings.top_k)
-        return chunks, _sources_detail(chunks)
+        return chunks, _sources_detail(chunks, scale)
 
     result = retrieval.hybrid(query, settings.top_k)
     if not result.fused:
-        return [], _sources_detail([])
+        return [], _sources_detail([], scale)
 
     # How much the two retrievers disagreed is the number worth reading here:
     # full overlap means the merge changed nothing and either specialist would
@@ -206,17 +225,17 @@ def _retrieve(route: str, query: str) -> tuple[list[Chunk], str]:
     dense_ids = {c.chunk_id for c in result.dense[: settings.top_k]}
     sparse_ids = {c.chunk_id for c in result.sparse[: settings.top_k]}
     return result.fused, (
-        f"{_sources_detail(result.fused)}; retrievers agreed on "
+        f"{_sources_detail(result.fused, scale)}; retrievers agreed on "
         f"{len(dense_ids & sparse_ids)}/{settings.top_k} of their tops"
     )
 
 
-def _sources_detail(chunks: list[Chunk]) -> str:
+def _sources_detail(chunks: list[Chunk], scale: str) -> str:
     if not chunks:
         return "no chunks found — is the index built? (make index)"
     return (
         f"{len(chunks)} chunks from {', '.join(sorted({c.source for c in chunks}))} "
-        f"(best score {chunks[0].score})"
+        f"(best {scale} score {chunks[0].score})"
     )
 
 
