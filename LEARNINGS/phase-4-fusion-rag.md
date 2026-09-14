@@ -79,12 +79,33 @@ bigtable.md#0  = 1/(k+1)               found by one, decisively
 ```
 
 Two fifth places beat one first place whenever `2/(k+5) > 1/(k+1)` — that is, whenever
-`k > 3`. I swept `k`: at `k ≤ 3` the correct chunk is back in the merged top 4, and from
-`k = 4` up it is gone.
+`k > 3`.
 
-That is *not* the escape hatch it looks like. `k` is the damping that stops one retriever
-unilaterally deciding the merge — the reason the standard value is 60. Setting `k = 2` to
-rescue this query re-creates the failure RRF's damping exists to prevent. The tuning knob
+**Correction (re-measured against the 43-chunk index).** I originally wrote that the sweep
+confirms this directly: "at `k ≤ 3` the correct chunk is back in the merged top 4, and from
+`k = 4` up it is gone." That is off by three, and the off-by-three is the actual lesson.
+Sweeping `k` over the real candidate lists (12 per retriever):
+
+```
+k = 0…3   bigtable.md#0 in the fused top 4, ranked above cassandra.md#0
+k = 4…6   bigtable.md#0 still in the top 4, now ranked below cassandra.md#0
+k ≥ 7     bigtable.md#0 gone
+```
+
+The inequality is arithmetically right and answers the wrong question. `2/(k+5) > 1/(k+1)`
+governs the **pairwise order** of two chunks; what the pipeline consumes is **membership in
+the top 4**, which is decided by the chunk in *fourth* place, not the one in first. Losing a
+rank costs nothing while the window still holds you. The chunk that actually evicts
+`bigtable.md#0` is `cassandra.md#3` — dense **#9**, BM25 **#8**, scoring `1/(k+9) + 1/(k+8)`
+— which overtakes `1/(k+1)` at `k = 7`.
+
+Worth keeping as a habit: an ordering inequality between two items tells you nothing about a
+top-*k* cutoff until you have named the item at position *k*. I derived a threshold and did
+not check it against a sweep; the sweep disagreed by three.
+
+That said, `k` is *not* the escape hatch it looks like. `k` is the damping that stops one retriever
+unilaterally deciding the merge — the reason the standard value is 60. Setting `k` anywhere in
+the rescue band (`≤ 6`) re-creates the failure RRF's damping exists to prevent. The tuning knob
 trades one failure mode for its mirror image rather than removing either.
 
 (On the original 4-document corpus this section read differently: `dynamo.md#3` was dense #1

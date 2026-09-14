@@ -101,8 +101,9 @@ num_ctx=8192   model actually saw 4162 of 4162 tokens   -> "PLATYPUS-42"
 ```
 
 That is a real measurement from this codebase, at Ollama's **actual default** of 2048 —
-not a contrived low value. All 18 indexed chunks were sent with a canary planted at the
-front, then the model was asked to read it back.
+not a contrived low value. All 18 indexed chunks — the whole corpus at the time; it is 43
+now — were sent with a canary planted at the front, then the model was asked to read it
+back.
 
 Two details make this worse than ordinary truncation. First, at `num_ctx=2048` the model
 saw only **1026** tokens, not 2048 — Ollama reserves the rest of the window for

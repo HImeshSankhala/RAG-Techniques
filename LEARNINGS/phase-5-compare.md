@@ -37,13 +37,21 @@ matter are in the *evidence*, and they are structural rather than stylistic.
 | | Standard RAG | Fusion RAG |
 |---|---|---|
 | lead chunk | `raft.md#0` — wrong document | `dynamo.md#2` — correct |
-| overlap | 75% (3 of 4 shared) | |
-| only A | `dynamo.md#3` | |
-| only B | `mapreduce.md#0` | |
+| overlap | 25% (1 of 4 shared) | |
+| only A | `chubby.md#0`, `chubby.md#2`, `spanner.md#3` | |
+| only B | `cassandra.md#4`, `chubby.md#3`, `dynamo.md#2` | |
 
 Fusion's trace states the mechanism outright:
-`dense 12 (top raft.md#0), BM25 12 (top dynamo.md#2)`. Dense had the topic right and the
+`dense 12 (top raft.md#0), BM25 12 (top cassandra.md#4)`. Dense had the topic right and the
 document wrong; BM25 matched the literal phrase.
+
+> **Re-measured against the 43-chunk / 9-document corpus.** This table originally read
+> `overlap 75% (3 of 4 shared)`, `only A: dynamo.md#3`, `only B: mapreduce.md#0`, with
+> BM25's top hit as `dynamo.md#2`. Every one of those numbers moved when the corpus grew;
+> the two lead chunks, which are the row the section is actually about, did not. The
+> comparison got *stronger* — the two techniques now share one chunk of four instead of
+> three, so the compare view is showing genuinely different evidence rather than a
+> reordering. Same expiry as Phase 4's: a retrieval number is a fact about one index.
 
 **Standard on local vs Haiku** (same technique):
 

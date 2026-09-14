@@ -1,5 +1,5 @@
 import type { Chunk, RunResponse } from "@/lib/api";
-import { formatMs } from "@/lib/format";
+import { formatMs, money } from "@/lib/format";
 import { StepsTrace } from "@/components/StepsTrace";
 
 /**
@@ -25,7 +25,7 @@ export function ResultPanel({ result }: { result: RunResponse }) {
         <Badge label="tokens" value={`${metadata.tokens_in} in / ${metadata.tokens_out} out`} />
         <Badge
           label="cost"
-          value={metadata.cost_estimate_usd > 0 ? `$${metadata.cost_estimate_usd.toFixed(4)}` : "free"}
+          value={money(metadata.cost_estimate_usd)}
           tone={metadata.cost_estimate_usd > 0 ? "paid" : "free"}
         />
         <Badge

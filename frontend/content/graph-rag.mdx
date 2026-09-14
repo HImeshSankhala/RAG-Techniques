@@ -7,15 +7,43 @@ graph, and retrieves by traversing it rather than by similarity alone.
 
 Some questions have no single passage that answers them.
 
-> *Which system combined Bigtable's data model with Dynamo's replication approach?*
+> *What replaced ZooKeeper in newer Kafka, and what was that protocol designed to be
+> easier than?*
 
-The answer is Cassandra. In this project's corpus that fact is stated in two places —
-`bigtable.md` says Cassandra borrowed its column-family model, `dynamo.md` says Cassandra
-borrowed its replication. Neither sentence contains the full answer.
+Answering it takes two hops through this project's 43-chunk corpus:
 
-Similarity search retrieves passages that look like the *question*. It has no mechanism
-for "retrieve A, notice A points at B, then retrieve B." Multi-hop questions are not a
-tuning problem for dense retrieval — they are outside what it can express.
+1. `kafka.md#4` — newer Kafka replaces ZooKeeper with **KRaft**, which moves cluster
+   metadata into an internal topic replicated by **Raft**.
+2. `raft.md#1` / `chubby.md#3` — Raft was published with an explicit design goal of
+   understandability, as an alternative to **Paxos**.
+
+The hops do not overlap, and that is measurable rather than asserted. `KRaft` occurs in
+exactly **one** chunk of 43 (`kafka.md#4`), and that chunk contains neither `Paxos` nor
+`understandab*`. Across the whole corpus, **no chunk contains both `Paxos` and `Kafka`**.
+There is no shortcut passage to retrieve; the bridge is the word `Raft`, which the question
+never says.
+
+Dense retrieval duly fails it. Its top 4 is `kafka.md#4`, `chubby.md#4`, `kafka.md#1`,
+`kafka.md#0` — hop 1 answered, hop 2 missing, and `chubby.md#4` merely mentions Paxos in
+passing about implementation effort. Hybrid fusion fails the same way. A single similarity
+pass cannot get there, because it retrieves passages that look like the *question*, and
+nothing that looks like the question knows Raft is involved.
+
+(One honest caveat: BM25 *alone* happens to land `raft.md#1` at rank 2 here, on incidental
+vocabulary overlap. That is luck, not chaining — it has no idea the two chunks are connected,
+and rewording the question evaporates it.)
+
+Similarity search, in any of its forms, retrieves passages that look like the *question*. It
+has no mechanism for "retrieve A, notice A points at B, then retrieve B." Multi-hop questions
+are not a tuning problem for dense retrieval — they are outside what it can express.
+
+**A note on how this example was chosen.** The page previously used *"Which system combined
+Bigtable's data model with Dynamo's replication approach?"*, on the grounds that the corpus
+stated the two halves separately. It no longer does, in four places: `cassandra.md` opens by
+saying Cassandra takes replication from Dynamo and its storage model from Bigtable in a
+single sentence, restates it under "Lineage", and both `bigtable.md` and `dynamo.md` state it
+whole as well. One passage answered it outright, so it stopped being multi-hop. A multi-hop
+example is a claim about a specific corpus, and re-indexing expires it.
 
 ## How it works
 
@@ -43,16 +71,18 @@ Nodes are entities, edges are relations, both extracted by an LLM:
 
 ```mermaid
 flowchart LR
-  CAS[Cassandra] -->|data model from| BT[Bigtable]
-  CAS -->|replication from| DY[Dynamo]
-  HB[HBase] -->|open-source of| BT
-  BT -->|stores in| GFS[GFS]
-  BT -->|coordinates via| CH[Chubby]
-  DY -->|uses| VC[Vector clocks]
+  KAF[Kafka] -->|originally coordinated by| ZK[ZooKeeper]
+  KAF -->|newer versions use| KR[KRaft]
+  KR -->|replicated by| RA[Raft]
+  RA -->|understandable alternative to| PX[Paxos]
+  ZK -->|consensus protocol| ZAB[Zab]
+  CH[Chubby] -->|replicated log is| PX
 ```
 
-Answering the Cassandra question is now one hop from `Cassandra` in two directions —
-a graph operation, not a similarity computation.
+Answering the question is now a walk from `Kafka` — `Kafka → KRaft → Raft → Paxos`, three
+edges, two retrieval hops (`kafka.md#4`, then `raft.md#1`). A graph operation, not a
+similarity computation, and the step similarity cannot make is `KRaft → Raft`: nothing in the
+question resembles the word `Raft`, so nothing pulls the second chunk in.
 
 **Traversal complexity:** breadth-first to depth *d* is O(V + E) worst case, but bounded
 in practice by the hop limit and node degree. Depth 2 from a single entity is typically
