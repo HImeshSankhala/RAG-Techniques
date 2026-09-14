@@ -6,9 +6,15 @@ runtime, and it needs all three paths callable by name — which is what turns
 "how do we retrieve" into its own vocabulary rather than a detail inside a
 pipeline.
 
-That also satisfies the rule of three. Fusion RAG and Auto RAG's hybrid route are
-the same scatter-gather, and Multi-Pass and Standard RAG both open with the same
-two-line dense lookup. Three consumers is where CLAUDE.md says to extract.
+What justifies `hybrid` living here is duplication that actually existed: Fusion
+RAG and Auto RAG's hybrid route are the same scatter-gather, the same candidate
+multiplier and the same RRF merge. Both now call it; nobody else does.
+
+`dense` is a convenience, not an extraction. Standard RAG and Multi-Pass still
+call `vectorstore.query(embeddings.embed_query(q), k)` directly, and they should:
+one line is not duplication worth an indirection, and routing it through here
+would buy a layer that hides where the embedding happens. `hybrid` needs it, so
+it is defined here — that is the whole reason.
 
 Nothing here makes an LLM call or records a step: these are the workers, and the
 pipeline above stays responsible for narrating what it chose and why.

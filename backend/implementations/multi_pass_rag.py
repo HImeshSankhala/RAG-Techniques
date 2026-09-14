@@ -81,11 +81,6 @@ _COMPLETE = "complete"
 
 class MultiPassRAG(RAGPipeline):
     name = "multi-pass-rag"
-    display_name = "Multi-Pass RAG"
-    tagline = (
-        "Draft an answer, critique it for gaps, retrieve again to fill them. "
-        "Latency bought with accuracy."
-    )
 
     def run(self, query: str, model: str | None = None) -> RAGResult:
         steps = StepRecorder()
@@ -245,8 +240,15 @@ def _build_critique_prompt(
     `asked` is the loop's memory. The alternative fixes are both worse: dropping
     gaps whose text repeats an earlier one is defeated by any paraphrase (which is
     exactly what the model produces), and requiring N new chunks before continuing
-    is a magic number fitted to one observation. Telling the critique what has
-    already failed lets it answer COMPLETE for the right reason.
+    is a magic number fitted to one observation.
+
+    Do not overclaim what it buys. Measured over 3/3 runs, the critique still
+    re-asks a gap listed under "Already searched for, without success" — it does
+    not reliably answer COMPLETE. What changed is that it now repeats the gap
+    VERBATIM instead of paraphrasing it, so re-retrieval returns the identical
+    chunks and the pre-existing `no_new_evidence` guard fires. The run ends there
+    rather than at `max_iterations`. The guard does the stopping; this prompt just
+    stops hiding the repetition from it.
     """
     prompt = f"{build_prompt(query, chunks)}\n\nDraft answer:\n{draft}"
     if asked:

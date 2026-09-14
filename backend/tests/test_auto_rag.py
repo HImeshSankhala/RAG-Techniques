@@ -12,6 +12,7 @@ Requires the index: run `make index` first.
 import pytest
 
 from core import keyword, llm, retrieval, vectorstore
+from core.config import settings
 from core.llm import LLMResponse
 from implementations.auto_rag import FALLBACK_ROUTE, AutoRAG, parse_route
 
@@ -85,6 +86,12 @@ def test_the_answer_call_is_not_a_helper_call(stub_llm) -> None:
 
 
 # --- Each route dispatches to the right retriever ---------------------------
+#
+# The route is asserted on the trace, not on `termination_reason`. That field is
+# a loop outcome (single_pass | no_gaps_found | gaps_closed | max_iterations) and
+# the compare view lines it up column-wise across techniques, so a route in it
+# would be compared against Multi-Pass's loop verdict — two different questions
+# sharing one cell. Auto RAG has no loop, so it reports single_pass.
 
 
 def test_vector_route_uses_dense_only(stub_llm, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -93,8 +100,8 @@ def test_vector_route_uses_dense_only(stub_llm, monkeypatch: pytest.MonkeyPatch)
 
     result = AutoRAG().run(QUERY)
 
-    assert result.metadata.termination_reason == "routed_vector"
-    assert result.retrieved_chunks == retrieval.dense(QUERY, 4)
+    assert "route=vector" in result.steps[0].detail
+    assert result.retrieved_chunks == retrieval.dense(QUERY, settings.top_k)
 
 
 def test_keyword_route_uses_bm25_only(stub_llm, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -103,8 +110,8 @@ def test_keyword_route_uses_bm25_only(stub_llm, monkeypatch: pytest.MonkeyPatch)
 
     result = AutoRAG().run("hinted handoff")
 
-    assert result.metadata.termination_reason == "routed_keyword"
-    assert result.retrieved_chunks == keyword.query("hinted handoff", 4)
+    assert "route=keyword" in result.steps[0].detail
+    assert result.retrieved_chunks == keyword.query("hinted handoff", settings.top_k)
 
 
 def test_hybrid_route_fuses_both(stub_llm) -> None:
@@ -112,11 +119,37 @@ def test_hybrid_route_fuses_both(stub_llm) -> None:
 
     result = AutoRAG().run(QUERY)
 
-    assert result.metadata.termination_reason == "routed_hybrid"
-    assert result.retrieved_chunks == retrieval.hybrid(QUERY, 4).fused
+    assert "route=hybrid" in result.steps[0].detail
+    assert result.retrieved_chunks == retrieval.hybrid(QUERY, settings.top_k).fused
     # RRF scores are tiny by construction (ceiling 2/61 for two lists), which is
     # the cheapest way to prove fusion ran rather than a single retriever.
     assert result.retrieved_chunks[0].score < 0.05
+
+
+def test_no_loop_means_the_loop_outcome_is_single_pass(stub_llm) -> None:
+    """Whatever the router decides, this technique retrieves once and stops."""
+    stub_llm("keyword")
+
+    assert AutoRAG().run("hinted handoff").metadata.termination_reason == "single_pass"
+
+
+@pytest.mark.parametrize(
+    "route,query,scale",
+    [
+        ("vector", QUERY, "best cosine score"),
+        ("keyword", "hinted handoff", "best BM25 score"),
+        ("hybrid", QUERY, "best RRF score"),
+    ],
+)
+def test_the_trace_names_the_scale_each_score_is_on(
+    stub_llm, route: str, query: str, scale: str
+) -> None:
+    """Cosine ~0.61, raw BM25 ~10.07 and RRF ~0.031 are three different rulers.
+    An unlabelled "best score" invites exactly the comparison Phase 4 calls
+    meaningless."""
+    stub_llm(route)
+
+    assert scale in AutoRAG().run(query).steps[1].detail
 
 
 # --- Robustness: the router is a small model emitting free text -------------
@@ -143,15 +176,21 @@ def test_unusable_replies_fall_back(reply: str) -> None:
 
 def test_garbage_router_output_falls_back_to_hybrid_and_says_so(stub_llm) -> None:
     """The fallback must be loud. A silent one is indistinguishable in the trace
-    from a confident correct decision, which is the case worth telling apart."""
+    from a confident correct decision, which is the case worth telling apart.
+
+    The trace is now the ONLY place it is visible — `termination_reason` used to
+    carry `routed_hybrid_fallback` and no longer does, because that field is a
+    loop outcome. Hence asserting on the wording here rather than only on the
+    route: this string is load-bearing.
+    """
     stub_llm("I cannot decide, sorry!")
 
     result = AutoRAG().run(QUERY)
 
-    assert result.metadata.termination_reason == "routed_hybrid_fallback"
-    assert result.retrieved_chunks == retrieval.hybrid(QUERY, 4).fused
+    assert "route=hybrid" in result.steps[0].detail
     assert "FALLBACK" in result.steps[0].detail
     assert "I cannot decide" in result.steps[0].detail
+    assert result.retrieved_chunks == retrieval.hybrid(QUERY, settings.top_k).fused
 
 
 # --- The trace, which is the teaching surface -------------------------------

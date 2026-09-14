@@ -129,13 +129,17 @@ class _PendingStep:
 class RAGPipeline(ABC):
     """One RAG technique.
 
-    Subclasses set the three class attributes and implement `run`. `name` is the
-    slug and must match both the MDX filename and the registry key.
+    Subclasses set `name` and implement `run`. `name` is the slug and must match
+    the MDX filename, the registry key, and `registry.CATALOG`'s entry.
+
+    Deliberately not here: display_name and tagline. Those are catalog copy, and
+    `registry.CATALOG` — which already calls itself the single source of truth —
+    is what /api/techniques reads. Declaring them here too meant four pipelines
+    each carrying a second copy that nothing read, and AutoRAG's was already
+    byte-identical to CATALOG's: drift with no reader to notice it.
     """
 
     name: str
-    display_name: str
-    tagline: str
 
     @abstractmethod
     def run(self, query: str, model: str | None = None) -> RAGResult:

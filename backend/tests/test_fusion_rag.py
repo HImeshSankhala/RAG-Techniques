@@ -5,7 +5,8 @@ Requires the index: run `make index` first.
 
 import pytest
 
-from core import keyword, llm, vectorstore
+from core import keyword, llm, retrieval, vectorstore
+from core.config import settings
 from core.llm import LLMResponse
 from implementations.fusion_rag import FusionRAG
 
@@ -56,6 +57,17 @@ def test_steps_show_both_retrievers_and_the_merge(stub_llm: list[str]) -> None:
     ]
     assert "dense" in steps[0].detail and "BM25" in steps[0].detail
     assert "k=60" in steps[1].detail
+
+
+def test_fusion_is_exactly_core_retrieval_hybrid(stub_llm: list[str]) -> None:
+    """Fusion RAG and Auto RAG's hybrid route are one mechanism, in core/retrieval.
+
+    Pinned rather than assumed: this file used to own a private copy of the
+    multiplier, the thread pool and the merge, and a copy is a thing that drifts.
+    """
+    result = FusionRAG().run(QUERY)
+
+    assert result.retrieved_chunks == retrieval.hybrid(QUERY, settings.top_k).fused
 
 
 def test_still_one_retrieval_pass(stub_llm: list[str]) -> None:
