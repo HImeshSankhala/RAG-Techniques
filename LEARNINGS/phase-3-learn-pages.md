@@ -34,6 +34,29 @@ The docs cite failures actually observed here rather than generic textbook ones:
 This matters because it makes the claims checkable. A reader can run the memtable query in
 the playground and watch dense retrieval mis-rank it.
 
+> **Both retrieval examples above have since been falsified, and the section is left
+> standing because being wrong in a specific, checkable way is the whole point it was
+> making.** Re-measured against the current 43-chunk / 9-document index:
+>
+> - The `memtable` claim expired with a re-chunking. `bigtable.md#2` now contains the
+>   tablet-location text *and* the memtable definition in one chunk, and dense ranks it
+>   **first** (`What is a memtable?` → `bigtable.md#2`, `cassandra.md#2`, `bigtable.md#1`,
+>   `spanner.md#1`). There is no mis-ranking left to watch. Phase 4 replaced the example on
+>   the learn page with three measured exact-term failures.
+> - The Cassandra claim expired with the corpus expansion. The lineage is now stated whole,
+>   in a single sentence, in four places: `cassandra.md` (opening paragraph, and again under
+>   "Lineage"), `bigtable.md`, and `dynamo.md`. It has not been multi-hop since. The Graph
+>   RAG page now uses `What replaced ZooKeeper in newer Kafka, and what was that protocol
+>   designed to be easier than?` — verified two-hop: `KRaft` occurs in exactly one chunk
+>   (`kafka.md#4`), that chunk contains neither `Paxos` nor `understandab*`, and no chunk in
+>   the corpus contains both `Paxos` and `Kafka`.
+>
+> The lesson this phase should have written down and did not: **grounding a claim in a
+> measurement does not make it durable, it makes it expirable.** A citable observation about
+> retrieval is a fact about one index at one chunking, and every re-index is a silent
+> invalidation pass over the prose. Either attach the index configuration to the claim, or
+> expect to re-measure it — Phase 4 hit exactly this and drew the same conclusion.
+
 ## Architecture: MDX with a dynamic route
 
 ```
@@ -48,7 +71,7 @@ them in frontmatter. So the "Runnable" badge on a learn page flips automatically
 technique is registered in Phase 4 — the same derivation that has held since Phase 0.
 
 The route uses `await import(\`@/content/${slug}.mdx\`)` with `generateStaticParams` and
-`dynamicParams = false`. All nine are prerendered at build time (13 static pages total), and
+`dynamicParams = false`. All nine are prerendered at build time (13 static pages at the time; 14 now), and
 an unknown slug 404s rather than attempting an import that cannot resolve.
 
 The learn page degrades gracefully if the backend is down: `findTechnique` catches and
@@ -92,7 +115,8 @@ which is worth knowing before designing a content pipeline around one.
 
 ## Failure mode: two systems both trying to add quotation marks
 
-The Graph RAG page rendered its pull quote as:
+The Graph RAG page rendered its pull quote as (the quote has since been replaced — see the
+correction above — but the rendering bug and its fix are unchanged):
 
 ```
 ""Which system combined Bigtable's data model with Dynamo's replication approach?""

@@ -169,7 +169,8 @@ raw characters, so chunks opened mid-word (`"it of access control"` cut out of
 
 ## What "done" means here, and what is still unverified
 
-Retrieval is verified end-to-end: 18 chunks from 4 documents, queries route to the
+Retrieval is verified end-to-end: 18 chunks from 4 documents (the corpus as it stood in
+this phase — it is 43 chunks from 9 documents now), queries route to the
 correct source document, chunks come back ordered, and the full pipeline —
 including step timings and metadata — is exercised by tests with the LLM call
 stubbed.
