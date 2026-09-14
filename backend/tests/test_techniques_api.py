@@ -51,7 +51,13 @@ def test_implemented_flag_tracks_the_registry() -> None:
     body = client.get("/api/techniques").json()
     runnable = {entry["name"] for entry in body if entry["implemented"]}
 
-    assert runnable == {"standard-rag", "fusion-rag", "multi-pass-rag", "auto-rag"}
+    assert runnable == {
+        "standard-rag",
+        "fusion-rag",
+        "multi-pass-rag",
+        "auto-rag",
+        "graph-rag",
+    }
 
 
 def test_run_rejects_an_unknown_technique() -> None:
@@ -60,8 +66,13 @@ def test_run_rejects_an_unknown_technique() -> None:
 
 
 def test_run_distinguishes_docs_only_from_unknown() -> None:
-    """A documented-but-unbuilt technique is a different mistake than a typo."""
-    response = client.post("/api/run", json={"technique": "graph-rag", "query": "hi"})
+    """A documented-but-unbuilt technique is a different mistake than a typo.
+
+    Uses whichever technique is still docs-only; `graph-rag` was the example
+    until Phase 8 made it runnable. `realm` is permanent — it cannot run locally
+    at all — so it will not need swapping again.
+    """
+    response = client.post("/api/run", json={"technique": "realm", "query": "hi"})
     assert response.status_code == 409
     assert "not yet runnable" in response.json()["detail"]
 

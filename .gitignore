@@ -20,6 +20,9 @@ next-env.d.ts
 backend/.chroma/
 backend/*.db
 backend/.usage.json
+# Graph RAG's extracted knowledge graph — derived from the corpus, rebuilt with
+# `python -m core.graph`.
+backend/.graph.json
 
 # OS
 .DS_Store
