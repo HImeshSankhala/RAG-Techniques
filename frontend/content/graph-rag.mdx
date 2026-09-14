@@ -79,14 +79,48 @@ flowchart LR
   CH[Chubby] -->|replicated log is| PX
 ```
 
-Answering the question is now a walk from `Kafka` — `Kafka → KRaft → Raft → Paxos`, three
-edges, two retrieval hops (`kafka.md#4`, then `raft.md#1`). A graph operation, not a
-similarity computation, and the step similarity cannot make is `KRaft → Raft`: nothing in the
-question resembles the word `Raft`, so nothing pulls the second chunk in.
+Answering the question *should* be a walk from `Kafka` — `Kafka → KRaft → Raft → Paxos`,
+three edges, two retrieval hops (`kafka.md#4`, then `raft.md#1`). A graph operation rather
+than a similarity computation, and the step similarity cannot make is `KRaft → Raft`:
+nothing in the question resembles the word `Raft`, so nothing pulls the second chunk in.
 
 **Traversal complexity:** breadth-first to depth *d* is O(V + E) worst case, but bounded
 in practice by the hop limit and node degree. Depth 2 from a single entity is typically
 tens of nodes.
+
+## Measured on this corpus, it loses
+
+That is the theory. The implementation on this site does **not** beat Standard RAG on the
+very question above, and the site would be lying if it showed you the diagram and stopped.
+
+| | Standard RAG | Graph RAG |
+|---|---|---|
+| Latency | 2.6s | 4.4s |
+| Sources cited | 0.5 | 0.33 |
+| Second hop | wrong | **wrong, identically** |
+
+Graph RAG retrieves `kafka.md#4, bigtable.md#0, gfs.md#1, kafka.md#0`. `raft.md#1` — the
+chunk the whole example exists to reach — is **never in the top 4**.
+
+The reason is not a missed walk. Instrumented at two and three hops, with and without the
+extraction's hallucinated edges, every target chunk is *inside* the traversal every time
+and never ranked into the top 4. The ball reached from `Kafka` is 53 nodes touching **35 of
+43 chunks — 81% of the corpus.**
+
+So the graph is not acting as a filter. Once the walk returns four-fifths of everything,
+selection *within* it does all the work — and a graph has no similarity signal to select
+with. Four ranking rules were measured (depth-sorted, round-robin, edge-depth-weighted,
+seed-coverage); the best one ships and still loses.
+
+**The lesson is about corpus size, not about graphs.** Nine documents are small enough that
+two hops reach nearly everything. Multi-hop retrieval pays off when the graph is sparse
+relative to the corpus — thousands of documents where two hops reach dozens, not 81%. The
+technique is not wrong; this corpus is too small for it to be right.
+
+The obvious repair, not built here because PLAN.md specifies entity seeding: seed the walk
+from dense retrieval's top-k and expand one hop, instead of seeding from query entities.
+That reaches `raft.md#1` in a single hop from `kafka.md#4` — retrieval choosing where to
+start, the graph choosing where to go next.
 
 ## The real cost: extraction
 
@@ -106,7 +140,7 @@ graph fragments, and a fragmented graph silently loses the very hops it exists t
 | Index cost | Embed each chunk | Embed **+ LLM call per chunk** |
 | Query cost | 1 LLM call | 1 LLM call + traversal |
 | Re-index on change | Cheap | Expensive |
-| Multi-hop questions | Cannot | Designed for |
+| Multi-hop questions | Cannot | Designed for — but see the measurement above |
 | Single-passage questions | Strong | No better, sometimes worse |
 | Main risk | Wrong passage | Bad extraction, silently |
 
