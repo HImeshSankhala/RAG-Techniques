@@ -38,25 +38,51 @@ should think." Measured on this machine, on the identical router prompt:
 | | latency | output tokens |
 |---|---|---|
 | `helper=True, reason=False` | **0.07 – 0.23 s** | 2 – 3 |
-| `helper=True, reason=True`  | **13.6 / 16.4 / 26.1 s** | 407 |
+| `helper=True, reason=True`  | **11.1 – 34.2 s** | up to the full 1024 budget |
 
-A ~90–140× difference for the same one-word verdict. The work being dispatched is a
+Between **55× and 190×** for the same one-word verdict, reproduced twice on separate
+days (0.07–0.23 s and 0.16–0.20 s for the fast path). The work being dispatched is a
 sub-second retrieval. A thinking router would cost twenty times the retrieval it is
 choosing between, and Auto RAG would become a strictly slower Fusion RAG — the
 technique would demonstrate the opposite of its own lesson. That is why the flags
 were split in the commit before this one, and why `test_auto_rag.py` and
 `test_llm_backends.py` both assert `reason is False`.
 
-Measured across five end-to-end runs on the local backend, routing was **2.4 %–3.0 %
-of total latency** (67–72 ms of a 6.6–7.9 s run; generation is 5.9–7.7 s of it).
-That ratio is the whole justification for the technique.
+**A thinking router is not merely slow — it can return nothing at all.** One
+`reason=True` run spent its entire 1024-token budget inside the thinking block and
+came back with an **empty** reply, which `parse_route` cannot parse, so the run took
+tens of seconds to arrive at the hybrid fallback. This is the same failure already
+documented for the Multi-Pass critique in `core/config.py`: Ollama draws thinking
+tokens and reply tokens from one `num_predict` budget, so "let it think" and "cap the
+output" are in direct competition. Slowness is the symptom you notice; silent
+truncation of the actual answer is the one that bites.
 
-**What routing does NOT buy: accuracy.** Its ceiling is whatever the best single
-path would have returned, and `hybrid` already sits at that ceiling on every query
-by construction — its result set is a superset of either specialist's. So routing
-can only ever *lose* recall relative to always-hybrid, in exchange for spending less.
-Auto RAG is a cost optimisation wearing an intelligence costume, and reading it any
-other way will make the compare view against Fusion RAG look like a bug.
+Measured across end-to-end runs on the local backend, routing was **2.7 %–5.1 % of
+total latency** — tens of milliseconds against multi-second generation. That ratio is
+the whole justification for the technique.
+
+**What routing does NOT buy: accuracy.** Its ceiling is whatever the best single path
+would have returned. It is tempting to go one step further and say hybrid already sits
+at that ceiling by construction, because its result set is a superset of either
+specialist's — **that is false, and the corpus falsifies it immediately.** RRF does not
+union the two lists; it re-ranks them *and then truncates to `top_k`*. Measured on
+`reversed hostnames`:
+
+```
+keyword: bigtable.md#0, #1, #2, #3        <- 4/4 gold, the only document with the phrase
+vector : dynamo.md#3, raft.md#2, raft.md#3, chubby.md#2
+hybrid : cassandra.md#0, chubby.md#2, cassandra.md#3, dynamo.md#3   <- gold absent
+```
+
+Hybrid returns *worse* evidence than the specialist it contains, because
+`cassandra.md#0` placed 5th in both lists and RRF's consensus bonus outranks BM25's
+single decisive first place (Phase 4's "Where RRF itself fails", same query). The right
+framing is that **hybrid is the best-hedged default, not a superset** — it is the route
+least likely to be badly wrong across query types, and it is beatable on any given one.
+
+Auto RAG is still a cost optimisation rather than an accuracy improvement. But the
+reason is not "hybrid already wins"; it is that a router can only ever pick among paths
+that already exist.
 
 ## The algorithm and its cost
 
@@ -69,11 +95,14 @@ as a substring, rather than testing the whole reply for equality. That absorbs
 three-item alphabet; the reply is 2–3 tokens, so this is free.
 
 **Unparseable output falls back to `hybrid`, not to a specialist.** The three routes
-are not peers. Hybrid is the superset, so choosing it can only cost the extra
-retrieval — never recall. Falling back to a specialist means betting on the exact
-question the router just failed to answer, and losing that bet drops the right
-chunk entirely. (This is corpus- and deployment-dependent, not a law: retrieval here
-is local and free. Behind a billed retrieval API the safe default is worth
+are not peers — but the reason is weaker than "hybrid is the superset", which is not
+true (see above). The real argument is variance: falling back to a specialist bets the
+whole answer on the exact question the router just failed to answer, and half the time
+that bet is on the retriever with the wrong profile for the query. Hybrid is the route
+with the smallest worst case, not the route that dominates. It still loses sometimes —
+`reversed hostnames` is fallback-into-a-miss in one query — and choosing it is a
+hedge, not a guarantee. (This is corpus- and deployment-dependent either way: retrieval
+here is local and free. Behind a billed retrieval API the safe default is worth
 re-deriving.) The fallback is also *loud* — `termination_reason` becomes
 `routed_hybrid_fallback` and the step detail says `FALLBACK` — because a silent
 fallback is indistinguishable in the trace from a confident correct decision, and
@@ -97,50 +126,101 @@ duplicated by Auto RAG's hybrid route. Extracting it also renames the idea usefu
 — retrieval *strategies* become a vocabulary the router can select from, instead of
 a detail buried inside whichever pipeline happens to use it.
 
-## Failure mode: the router decides on wording, but divergence lives in the corpus
+## Correction: measuring at the wrong granularity got this backwards
 
-The honest result of measuring this: **on well-formed questions, the three routes
-mostly return the same chunks, so the router usually has no decision to get wrong.**
+This section previously concluded: *"on well-formed questions, the three routes
+mostly return the same chunks, so the router usually has no decision to get wrong."*
 
-Retrieval-only comparison, top-4 sources per route:
+**That is wrong, and the error was in the measurement, not the reasoning.** I compared
+**source filenames**. Four chunks all from `kafka.md` is not the same evidence as four
+other chunks all from `kafka.md`, and the model is shown chunks, not filenames.
+
+Re-measured at **chunk-id** granularity — set equality over the top-4, 23 queries
+(15 full questions + 8 bare terms), against the current 43-chunk / 9-document index:
+
+| | agree | |
+|---|---|---|
+| all three routes identical | **0 / 23** | (2 / 23 by source filename — the old method) |
+| `vector` == `keyword` | 0 / 23 | |
+| `vector` == `hybrid` | 2 / 23 | |
+| `keyword` == `hybrid` | 4 / 23 | |
+
+(The set: one full question per document plus six more spanning two documents, and the
+eight rarest literal phrases in the corpus — `reversed hostnames`, `hinted handoff`,
+`commit wait`, `SSTable`, `KRaft`, `chunkserver lease`, `TrueTime`, `log compaction`.
+Retrieval only, no LLM in the loop, so the numbers are deterministic and re-runnable.
+A different set moves the counts a little; it does not move `0/23`, because two
+retrievers with genuinely different failure modes agreeing on all four of four is rare
+by construction.)
+
+The old file's own showcase example is the cleanest illustration of the bug:
 
 ```
-"How does commit wait give Spanner external consistency?"
-  vector : spanner, spanner, spanner, chubby
-  keyword: spanner, spanner, spanner, spanner
-  hybrid : spanner, spanner, spanner, spanner      -> vector loses 1 chunk of 4
-
 "Explain how the ISR mechanism keeps Kafka replicas consistent."
-  vector / keyword / hybrid : all four chunks from kafka.md   -> no decision to make
-
-"commit wait"            <- the bare term
-  vector : chubby, kafka, spanner, raft
-  keyword: spanner, spanner, kafka, spanner
-  hybrid : kafka, spanner, spanner, spanner        -> vector loses 2 chunks of 4
+  by source : vector / keyword / hybrid — all four chunks from kafka.md  ("identical")
+  by chunk  : vector  kafka#1 kafka#4 kafka#0 kafka#2
+              keyword kafka#3 kafka#2 kafka#1 kafka#0
+              hybrid  kafka#1 kafka#3 kafka#2 kafka#0     <- three different prompts
 ```
 
-The divergence Phase 4 was built to exploit lives in **bare-term queries**, where
-dense retrieval has no surrounding sentence to anchor on and drifts to the wrong
-document. Wrap the same rare term in a full question and the extra words give the
-embedding enough context to land correctly — so the route stops mattering. But a
-full question is exactly what a real user types, and it is what the router sees.
+**The routes diverge on essentially every query. The router has a real decision to make
+almost every time, and it gets the important ones wrong.**
 
-The router picked `vector` for the Spanner sentence, deterministically, six times
-out of six. By the compare-view preset that query is a Fusion win, so this is a
-genuine misroute — and it cost one chunk out of four. That is the shape of the
-failure: not dramatic, just a slow leak of recall in exchange for skipping a
-retrieval that was free anyway.
+## The actual failure mode: the classifier, not the pattern
 
-Which sharpens the lesson. The router pattern's expected value is
+Two deterministic misroutes, both on queries this project ships in its own UI:
+
+**`reversed hostnames`** — routed `vector`, 5 runs out of 5. Dense returns
+`dynamo.md#3`, `raft.md#2`, `raft.md#3`, `chubby.md#2`: **zero** chunks of
+`bigtable.md`, which is the only document in the corpus containing the phrase.
+Groundedness **0.0**. BM25 returns 4/4 gold. This is the query the compare page ships
+*as its retrieval-divergence demo* — the one chosen because the difference between
+retrievers is maximally obvious.
+
+**`hinted handoff`** — routed `hybrid`. Fusion drops BM25's #1 hit (`cassandra.md#4`)
+out of the merged top 4 for the same RRF-consensus reason as above. `keyword` was the
+better route and hybrid was not a safe superset of it.
+
+The router's own prompt describes both of these almost verbatim under `keyword`:
+*"the question names a rare, literal, technical term… finding the documents that
+contain that exact token is what matters."* Two bare noun phrases, no verbs, no
+paraphrase to interpret. qwen3:8b routes them elsewhere anyway, and it does so
+deterministically — this is not sampling noise, it is the classifier's actual opinion.
+
+**So the honest lesson is: the router pattern is sound and the plumbing is correct, but
+an 8B classifier is not good enough to be the cheap front end** — on a corpus
+deliberately rigged so the right answer is obvious. That is a more useful result than
+"it works". It says the thing to measure before shipping a router is not "does routing
+save money" (it does, trivially) but **routing accuracy against a labelled set**, and
+it says the cheap front end has a floor below which the pattern stops being cheap and
+starts being a recall tax. `auto-rag.mdx`'s "you can measure routing accuracy;
+otherwise you are adding a component you cannot debug" was written in Phase 3 as
+advice. It turned out to be the finding.
+
+The obvious next moves, in increasing cost: hand-written rules for the unambiguous
+cases (`query is 1–3 tokens with no verb → keyword` would fix both misroutes above,
+free and fully debuggable); few-shot examples in the router prompt; a larger router
+model, at which point re-derive the inequality at the top of this file because it may
+no longer hold.
+
+## The economics, corrected
+
+The router pattern's expected value is
 
     P(the workers actually differ) × (cost saved by picking the cheap one)
 
-On a local corpus with free retrieval, the right-hand factor is near zero, so
-almost any routing error is affordable and almost any routing success is worthless.
-Auto RAG earns its keep when the workers are genuinely expensive and genuinely
-different — a paid reranker, a slow graph traversal, a large model. Ship the pattern
-for what it will be worth there, and read its numbers here as a demonstration
-rather than as a win.
+I previously wrote that the left factor was near zero here. It is **near 1**: 0/23
+queries had all three routes agree. What is near zero is the *right* factor — retrieval
+on this corpus is local and free, so a correct route saves microseconds and a wrong one
+costs real recall. On this deployment the product is therefore small and the sign is
+arguably negative: always-hybrid would be the better engineering choice, and Auto RAG
+is here to teach the pattern rather than to win the compare view.
+
+Auto RAG earns its keep when the workers are genuinely expensive *and* the classifier is
+genuinely accurate — a paid reranker, a slow graph traversal, a large model, in front of
+a router good enough that its error rate costs less than the work it skips. Both
+conditions, not one. This phase demonstrates the pattern and measures the condition it
+fails.
 
 ## Edge case: the router burns a call before it can see the index is empty
 
@@ -158,8 +238,8 @@ real call genuinely happened.
 ## What is asserted, and why those things
 
 - The router is invoked `helper=True, reason=False`. Load-bearing and invisible if
-  wrong — a thinking router still *works*, it is just 100× too slow, and nothing
-  errors.
+  wrong — a thinking router still *works*, it is just 55×–190× too slow (and can
+  return an empty reply outright), and nothing errors.
 - Each route dispatches to the right retriever, enforced by monkeypatching the
   *other* retriever to raise. Asserting on the returned chunks alone would pass if
   both ran.

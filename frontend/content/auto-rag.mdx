@@ -8,7 +8,8 @@ pipeline run.
 
 The previous techniques apply one strategy to every query. But queries are not alike:
 
-- `"What is a memtable?"` — one exact term. Keyword search wins.
+- `"reversed hostnames"` — a rare literal phrase. Measured on this corpus, BM25 returns
+  four chunks of `bigtable.md` and dense returns **none**. Keyword search wins.
 - `"How does Dynamo stay available during partitions?"` — conceptual, no distinctive
   tokens. Vector search wins.
 - `"Explain the CAP trade-off in Dynamo vs Raft"` — both, plus breadth. Hybrid wins.
@@ -33,8 +34,11 @@ flowchart TD
 ```
 
 The router is a classification call, not a generation call — it emits one label. That is
-why it can use a small model and a tight output cap (256 tokens here, versus 512 for the
-answer).
+why it can use a small model and a tight output cap (256 tokens on the paid backend, versus
+512 for the answer; 1024 locally, sized for the *other* helper calls that need to think).
+Thinking is switched off for the router specifically: measured on this machine, the same
+prompt takes 0.07–0.23 s without it and 11.1–34.2 s with it, a 55×–190× difference for the
+same one-word verdict.
 
 ## The router pattern
 
@@ -59,9 +63,17 @@ passages, around a thousand. That ratio is what makes it viable.
 
 ## The failure mode
 
-**A misrouted query fails silently and looks like a retrieval problem.** If the router
-sends `"What is a memtable?"` down the vector path, you get Standard RAG's exact-term
-weakness back — and nothing in the answer indicates a routing decision caused it.
+**A misrouted query fails silently and looks like a retrieval problem.** Send an exact-term
+query down the vector path and you get Standard RAG's exact-term weakness back, with nothing
+in the answer to indicate that a routing decision caused it.
+
+That is not hypothetical here. Measured on `reversed hostnames`, the local 8B router picks
+`vector` on every run — and dense retrieval returns `dynamo.md#3`, `raft.md#2`, `raft.md#3`,
+`chubby.md#2`: **zero** chunks of `bigtable.md`, the only document that contains the phrase.
+BM25 would have returned four out of four. The router's own prompt describes this query
+almost word for word under `keyword` ("a rare, literal, technical term"), and the model
+routes it elsewhere anyway. **The pattern is sound; a small classifier is the part that
+fails**, and it fails on a corpus rigged to make the right answer obvious.
 
 This is why the router's choice belongs in the steps trace. Without it, debugging a bad
 answer means guessing which of two subsystems misbehaved.
