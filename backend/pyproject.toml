@@ -16,6 +16,10 @@ dependencies = [
     "sentence-transformers==5.1.2",
     # BM25 keyword retrieval (Phase 4). Pure Python + numpy, no index to persist.
     "rank_bm25==0.2.2",
+    # Knowledge graph for Graph RAG (Phase 8). Pure Python, in-memory, no service
+    # to run — the graph is small enough that a real graph database would be
+    # infrastructure bought for nothing.
+    "networkx==3.6.1",
 ]
 
 [project.optional-dependencies]

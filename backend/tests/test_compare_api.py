@@ -103,7 +103,9 @@ def test_unknown_technique_surfaces_its_status() -> None:
     """Errors from either side must not be swallowed by the comparison."""
     assert compare("q", {"technique": "nope"}, {"technique": "standard-rag"}).status_code == 404
     assert (
-        compare("q", {"technique": "standard-rag"}, {"technique": "graph-rag"}).status_code
+        # `realm` is the permanent docs-only technique — it cannot run locally at
+        # all. `graph-rag` stood here until Phase 8 made it runnable.
+        compare("q", {"technique": "standard-rag"}, {"technique": "realm"}).status_code
         == 409
     )
 

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from core.pipeline import RAGPipeline
 from implementations.auto_rag import AutoRAG
 from implementations.fusion_rag import FusionRAG
+from implementations.graph_rag import GraphRAG
 from implementations.multi_pass_rag import MultiPassRAG
 from implementations.standard_rag import StandardRAG
 
@@ -21,6 +22,7 @@ PIPELINES: dict[str, RAGPipeline] = {
     FusionRAG.name: FusionRAG(),
     MultiPassRAG.name: MultiPassRAG(),
     AutoRAG.name: AutoRAG(),
+    GraphRAG.name: GraphRAG(),
 }
 
 
