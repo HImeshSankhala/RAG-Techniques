@@ -498,17 +498,26 @@ def _preset_hinted_handoff() -> str | None:
 
 
 def _preset_commit_wait() -> str | None:
-    """Note: `dense leads with chubby.md; only the literal term finds spanner.md`.
+    """Note: `dense leads with chubby.md and misses BM25's #1, spanner.md#2 — one of
+    two chunks that say the words`.
 
-    Both halves are asserted as written. The second half is the stronger reading
-    of "only the literal term finds spanner.md" — that dense does not find it —
-    and it is the reading a reader clicking the preset will take.
+    The note this replaced said "only the literal term finds spanner.md", which was
+    false: dense returns `spanner.md#4` — a chunk that does contain the phrase — at
+    rank 4. The document was never the thing dense missed; a specific chunk was.
+
+    Note the claim is scoped to the top 4, which is what the compare view puts in
+    front of a reader. `spanner.md#2` is dense's rank **9** in a wider candidate
+    window, so "never returns it" would repeat the original overclaim one window
+    further out. "Misses" means "is not in the evidence", and that is asserted as
+    written.
     """
     query = "What is commit wait?"
+    literal = containing("commit wait")
     return _problems(
         _expect("the document dense leads with", dense(query)[0].source, "chubby.md"),
-        _expect("spanner.md chunks in dense's top 4", "spanner.md" in docs(dense(query)), False),
-        _expect("spanner.md chunks in BM25's top 4", "spanner.md" in docs(sparse(query)), True),
+        _expect("BM25's top hit", sparse(query)[0].chunk_id, "spanner.md#2"),
+        _expect("spanner.md#2 in dense's top 4", "spanner.md#2" in ids(dense(query)), False),
+        _expect("the chunks that say 'commit wait'", literal, ["spanner.md#2", "spanner.md#4"]),
     )
 
 
@@ -716,7 +725,8 @@ CLAIMS: list[Claim] = [
     Claim(
         claim_id="compare.preset-commit-wait",
         where="frontend/components/CompareView.tsx — PRESETS[1].note",
-        says="dense leads with chubby.md and only the literal term finds spanner.md",
+        says="dense leads with chubby.md and misses BM25's #1, spanner.md#2 — one of two "
+        "chunks that say the words",
         corpus_specific=True,
         check=_preset_commit_wait,
     ),
