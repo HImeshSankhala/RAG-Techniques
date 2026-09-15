@@ -19,10 +19,7 @@ export function DiffSummary({
   a: RunResponse;
   b: RunResponse;
 }) {
-  // Nothing retrieved on either side is not "they disagreed completely" — it is
-  // an unbuilt index. The overlap arithmetic gives 0% for both, so the two cases
-  // have to be told apart here rather than from the number.
-  const noEvidence = a.retrieved_chunks.length === 0 && b.retrieved_chunks.length === 0;
+  const noEvidence = hasNoEvidence(a, b);
 
   return (
     <section className="rounded-lg border border-slate-200 p-5 dark:border-slate-800">
@@ -84,6 +81,18 @@ export function DiffSummary({
 }
 
 /**
+ * Nothing retrieved on *either* side is not "they disagreed completely" — it is
+ * an unbuilt index. The overlap arithmetic gives 0% for both, so the two cases
+ * have to be told apart here rather than from the number.
+ *
+ * Exported for the tests: which of the two it is decides which lesson the reader
+ * gets, and the boundary between them is not visible in any type.
+ */
+export function hasNoEvidence(a: RunResponse, b: RunResponse): boolean {
+  return a.retrieved_chunks.length === 0 && b.retrieved_chunks.length === 0;
+}
+
+/**
  * A sentence naming what actually varied.
  *
  * Written per case rather than as one generic template: "they retrieved
@@ -91,7 +100,7 @@ export function DiffSummary({
  * differed" are different lessons, and a reader should not have to infer which
  * one they are looking at from four numbers.
  */
-function summarise(
+export function summarise(
   diff: ComparisonDiff,
   a: RunResponse,
   b: RunResponse,
@@ -167,7 +176,7 @@ function Metric({
   );
 }
 
-function formatDelta(value: number, unit: string, humanise = false): string {
+export function formatDelta(value: number, unit: string, humanise = false): string {
   if (value === 0) return "same";
   const sign = value > 0 ? "+" : "−";
   const magnitude = Math.abs(value);
