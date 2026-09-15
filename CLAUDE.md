@@ -18,13 +18,21 @@ ONE phase at a time, in order, and stop for review after each.
 - Python 3.11+, full type hints; TS strict mode.
 - Conventional commits (feat:, fix:, docs:, refactor:, test:).
 - Every pipeline: pytest smoke test against data/sample_docs.
+- Frontend tests (Vitest) are IN SCOPE, but narrowly: only PURE LOGIC that decides what
+  the reader is told — the branch that picks a lesson, a formatter whose output is the
+  claim, a derivation over API numbers. Both sides of a wrong `if` typecheck, which is
+  why TS and eslint never closed this gap.
+  NOT snapshot tests. NOT render tests of components that only lay out props. NOT E2E.
+  NOT anything that mocks `fetch` (that tests the mock; `lib/api.ts` stays untested).
+  See PLAN.md "Testing scope". A test that cannot answer "would this have caught the
+  reader being told something false?" is out of scope — do not write it.
 - Keep costs low: local embeddings, local LLM by default, small sample docs.
 - Commands: `make index` before first run; Ollama must be running for the default backend.
 
 ## Commands
 - make dev      # backend :8000 + frontend :3000
 - make index    # ingest data/sample_docs into Chroma
-- make test     # pytest
+- make test     # pytest (backend) + vitest (frontend)
 - API docs at http://localhost:8000/docs
 
 ## Teaching mode (important)
