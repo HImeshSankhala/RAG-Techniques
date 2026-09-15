@@ -75,7 +75,8 @@ reason.
 ## What a failure prints, and who it is for
 
 The reader is someone who just added a document and has no idea which page they broke. So
-the report leads with the file and section, not with the diff:
+the report leads with the file and section, not with the diff. This is the real failure the
+harness caught on its first run, since fixed (see the last section):
 
 ```
 FAIL  compare.preset-commit-wait
@@ -139,15 +140,44 @@ worse, to loosen the assertion. Both convert the harness into an elaborate way o
 confirming whatever is currently true, which is precisely the state the project was already
 in with prose.
 
-This ships with `compare.preset-commit-wait` **failing**, and that is on purpose. The
-compare view's second preset promises *"dense leads with chubby.md; only the literal term
-finds spanner.md"*. Half of it holds: dense does lead with `chubby.md#2`. The other half
-does not — dense's top 4 is `chubby.md#2, spanner.md#3, chubby.md#0, spanner.md#4`, and
-`spanner.md#4` is one of the two chunks that literally contain "commit wait". Dense finds
-the exact chunk the note says only BM25 can reach; it just ranks it fourth instead of
-first. The note is true about rank 1 and false about the evidence window, which is what the
-model actually sees.
+The harness found one on its first run, and how it was closed is the worked example.
 
-The claim is pinned as written, red, until a human decides whether to weaken the note or
-change the preset. A red check is information. A green check bought by editing the claim is
-a lie with a CI badge on it.
+The compare view's second preset promised *"dense leads with chubby.md; only the literal
+term finds spanner.md"*. Half held: dense does lead with `chubby.md#2`. The other half did
+not — dense's top 4 is `chubby.md#2, spanner.md#3, chubby.md#0, spanner.md#4`, and
+`spanner.md#4` is one of the two chunks that literally contain "commit wait". Dense found
+the exact chunk the note said only BM25 could reach; it just ranked it fourth.
+
+There were three ways out, and two of them were traps:
+
+1. **Weaken the note** to something like "dense ranks chubby.md first". True, green, and
+   the preset stops demonstrating anything — the reader learns that two retrievers order
+   results differently, which is not the lesson.
+2. **Weaken the assertion** to check only the first half. The claim and the prose drift
+   apart, and the harness starts certifying a sentence it is not actually checking. This is
+   the worst option, because it looks like the first one from the outside.
+3. **Find the sharper claim that is true.** The note was reaching for a real fact and
+   grabbed the wrong one. The document was never what dense missed; a specific *chunk* was.
+   `spanner.md#2` is the other chunk containing the literal phrase, it is BM25's rank 1, and
+   it is absent from dense's top 4 entirely.
+
+The note now reads:
+
+> dense leads with chubby.md and misses BM25's #1, spanner.md#2 — one of two chunks that
+> say the words
+
+Every clause of it is a retrieval assertion, and `compare.preset-commit-wait` pins all
+four: dense's leading document, BM25's top hit by chunk id, `spanner.md#2`'s absence from
+dense's top 4, and that exactly two chunks contain the phrase. The claim is sharper than
+the one it replaced *and* green, which is the only combination worth having.
+
+One detail from the rewrite is worth keeping, because it is the same mistake one window
+further out: `spanner.md#2` **is** dense's rank 9. "Dense never returns it" would have been
+a fresh overclaim. The note says "misses", the predicate asserts absence from the top 4, and
+the top 4 is what the compare view puts in front of a reader — so the scope of the claim and
+the scope of the evidence match. Whenever a claim says a retriever "misses" something, the
+window it misses it in is part of the claim.
+
+The rule this leaves behind: **a red check is information; a green check bought by editing
+the claim is a lie with a CI badge on it.** When a claim fails, the question is never "how do
+I make this pass" — it is "what is the true statement nearby, and is it still worth making?"
