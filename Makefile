@@ -30,8 +30,11 @@ dev-frontend:
 index:
 	cd backend && .venv/bin/python -m core.index
 
+# Backend first: it is the slower and the more informative of the two, and a
+# frontend suite that runs in 250ms is not worth reordering for.
 test:
 	cd backend && .venv/bin/python -m pytest
+	cd frontend && npm test
 
 lint:
 	cd backend && .venv/bin/ruff check .
