@@ -105,18 +105,21 @@ consumes is top-4 *membership*, and membership is decided by whoever is standing
 place. Sweeping `k` over the real candidate lists (12 per retriever) shows the difference:
 
 ```
-k = 0…3   bigtable.md#0 in the fused top 4, ranked above cassandra.md#0
-k = 4…6   bigtable.md#0 still in the top 4, now ranked below cassandra.md#0
+k = 0…2   bigtable.md#0 in the fused top 4, ranked above cassandra.md#0
+          (at k = 0 cassandra.md#0 is not in the top 4 at all)
+k = 3…6   bigtable.md#0 still in the top 4, now ranked below cassandra.md#0
 k ≥ 7     bigtable.md#0 gone
 ```
 
-At `k = 4` `cassandra.md#0` overtakes the correct chunk exactly as the inequality predicts —
-and nothing is lost, because the chunk is still in the window. It only falls out at `k = 7`,
-when the fourth-place competitor catches it: `cassandra.md#3`, ranked **dense #9 and BM25
-#8**, scoring `1/(k+9) + 1/(k+8)`. Two mediocre placements overtake one first place at
-`k = 7`, not at `k = 4`. The failure is three steps further out than the arithmetic about
-the *winner* suggests — because RRF's consensus bonus accrues to every chunk both retrievers
-saw, not only to the one at the top.
+At `k = 3` `cassandra.md#0` overtakes the correct chunk — one step earlier than the
+inequality predicts, because `k > 3` is *strict* and `k = 3` is an exact tie at `1/4` each.
+RRF defines no tie-break, so what actually settles the order there is `sorted()` being
+stable and the dense list being merged first: an implementation detail of the merge, not a
+property of the algorithm. Nothing is lost either way, because the chunk is still in the
+window. It only falls out at `k = 7`, when the fourth-place competitor catches it:
+`cassandra.md#3`, ranked **dense #9 and BM25 #8**, scoring `1/(k+9) + 1/(k+8)`. The pairwise
+order flips at `k = 3`; eviction waits until `k = 7`, four steps further out — because RRF's
+consensus bonus accrues to every chunk both retrievers saw, not only to the one at the top.
 
 `k` is still not free to tune. It *is* the damping that stops one retriever unilaterally
 deciding the result, which is the reason the standard value is 60. Lowering it to rescue this

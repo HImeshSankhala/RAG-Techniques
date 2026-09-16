@@ -35,7 +35,7 @@ const PRESETS = [
   },
   {
     query: "What is commit wait?",
-    note: "dense leads with chubby.md; only the literal term finds spanner.md",
+    note: "dense leads with chubby.md and misses BM25's #1, spanner.md#2 — one of two chunks that say the words",
   },
   {
     query: "What are reversed hostnames used for?",
