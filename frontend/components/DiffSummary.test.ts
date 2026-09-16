@@ -1,21 +1,21 @@
 /**
  * The branch that decides which lesson the compare page teaches.
  *
- * `summarise()` picks one of five sentences. Each one is a different claim about
+ * `summarise()` picks one of seven sentences. Each one is a different claim about
  * why two answers differ — "retrieval differed", "generation differed", "nothing
- * is indexed". Pick the wrong branch and the page states something false with
- * full confidence, and nothing in the type system objects: every branch returns
- * a string, and both sides of `if (overlap === 0)` typecheck.
+ * is indexed", "one side never ran". Pick the wrong branch and the page states
+ * something false with full confidence, and nothing in the type system objects:
+ * every branch returns a string, and both sides of `if (overlap === 0)` typecheck.
  *
  * So the assertions here are about MEANING, not wording. They check which claim
- * the sentence makes (does it say retrieval, or generation, or empty index),
- * not its exact prose, so that rewording the copy does not break the suite while
+ * the sentence makes (does it say retrieval, or generation, or empty index), not
+ * its exact prose, so that rewording the copy does not break the suite while
  * flipping a comparison still does.
  */
 
-import { describe, expect, it, test } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { formatDelta, hasNoEvidence, summarise } from "@/components/DiffSummary";
+import { emptySideCount, formatDelta, summarise } from "@/components/DiffSummary";
 import type { Chunk, ComparisonDiff, RunResponse } from "@/lib/api";
 
 function chunks(...ids: string[]): Chunk[] {
@@ -38,12 +38,18 @@ function run(overrides: Partial<RunResponse> = {}): RunResponse {
       retrieval_passes: 1,
       tokens_in: 1000,
       tokens_out: 200,
-      termination_reason: "complete",
+      termination_reason: "single_pass",
       groundedness: 1,
       cost_estimate_usd: 0,
       ...overrides.metadata,
     },
   };
+}
+
+/** A side that retrieved nothing, carrying the pipeline's own reason for it. */
+function silentRun(technique: string, termination_reason: string): RunResponse {
+  const base = run({ technique, retrieved_chunks: [] });
+  return { ...base, metadata: { ...base.metadata, termination_reason } };
 }
 
 /** Mirrors `backend/api/routes/compare.py::_diff` — pct denominator is the LARGER side. */
@@ -70,12 +76,7 @@ function diff(overrides: Partial<ComparisonDiff> = {}): ComparisonDiff {
 
 describe("summarise — the axis clause", () => {
   it("names run-to-run variation when technique and model are both the same", () => {
-    const sentence = summarise(
-      diff({ same_technique: true, same_model: true }),
-      run(),
-      run(),
-      false,
-    );
+    const sentence = summarise(diff({ same_technique: true, same_model: true }), run(), run(), 0);
 
     expect(sentence).toContain("same technique on the same model");
   });
@@ -85,7 +86,7 @@ describe("summarise — the axis clause", () => {
       diff({ same_technique: true, same_model: false }),
       run({ metadata: { ...run().metadata, model: "qwen3:8b" } }),
       run({ metadata: { ...run().metadata, model: "claude-haiku-4-5" } }),
-      false,
+      0,
     );
 
     expect(sentence).toContain("Same technique, different models");
@@ -98,7 +99,7 @@ describe("summarise — the axis clause", () => {
       diff({ same_technique: false, same_model: true }),
       run({ technique: "standard-rag" }),
       run({ technique: "fusion-rag" }),
-      false,
+      0,
     );
 
     expect(sentence).toContain("Different techniques on the same model");
@@ -116,7 +117,7 @@ describe("summarise — the axis clause", () => {
         technique: "fusion-rag",
         metadata: { ...run().metadata, model: "claude-haiku-4-5" },
       }),
-      false,
+      0,
     );
 
     expect(sentence).toContain("standard-rag/qwen3:8b");
@@ -128,12 +129,7 @@ describe("summarise — the axis clause", () => {
 
 describe("summarise — the lesson clause", () => {
   it("blames the model's own variation when the same technique and model saw identical evidence", () => {
-    const sentence = summarise(
-      diff({ chunk_overlap_pct: 100, chunk_overlap: 2 }),
-      run(),
-      run(),
-      false,
-    );
+    const sentence = summarise(diff({ chunk_overlap_pct: 100, chunk_overlap: 2 }), run(), run(), 0);
 
     expect(sentence).toContain("run-to-run variation");
     expect(sentence).not.toContain("retrieval");
@@ -149,7 +145,7 @@ describe("summarise — the lesson clause", () => {
       }),
       run({ technique: "standard-rag" }),
       run({ technique: "fusion-rag" }),
-      false,
+      0,
     );
 
     expect(sentence).toContain("identical evidence");
@@ -167,7 +163,7 @@ describe("summarise — the lesson clause", () => {
       }),
       run({ technique: "standard-rag", retrieved_chunks: chunks("dynamo.md#0") }),
       run({ technique: "fusion-rag", retrieved_chunks: chunks("raft.md#3") }),
-      false,
+      0,
     );
 
     expect(sentence).toContain("completely different evidence");
@@ -179,26 +175,101 @@ describe("summarise — the lesson clause", () => {
       diff({ chunk_overlap: 3, chunk_overlap_pct: 75, same_technique: false }),
       run({ technique: "standard-rag" }),
       run({ technique: "fusion-rag" }),
-      false,
+      0,
     );
 
     expect(sentence).toContain("agreed on 3 of the retrieved chunks");
     expect(sentence).toContain("retrieval — not just generation");
   });
+});
 
-  it("tells the reader to build the index when neither side retrieved anything", () => {
-    const empty = run({ retrieved_chunks: [] });
+// --- No evidence: three situations that used to be two ---------------------
+//
+// These are the regression tests for the bug that shipped. `noEvidence` was
+// `a.length === 0 && b.length === 0`, so only the both-empty case was special;
+// a single empty side fell through to the overlap-0 branch and was reported as
+// a retrieval disagreement. Each of the three now says something different, and
+// only one of them mentions `make index`.
+
+describe("summarise — when a side retrieved nothing", () => {
+  it("tells the reader to build the index when BOTH sides blame an empty index", () => {
+    const empty = silentRun("standard-rag", "empty_index");
     const sentence = summarise(
       diff({ chunk_overlap: 0, chunk_overlap_pct: 0 }),
       empty,
       empty,
-      hasNoEvidence(empty, empty),
+      emptySideCount(empty, empty),
     );
 
     expect(sentence).toContain("neither side retrieved anything");
     expect(sentence).toContain("make index");
-    // The empty-index case must not also be reported as a retrieval disagreement.
     expect(sentence).not.toContain("completely different evidence");
+  });
+
+  it("does NOT blame the index when both sides are empty for another reason", () => {
+    // Graph RAG compared with itself and no .graph.json: the corpus is fine, and
+    // `make index` is advice that cannot help.
+    const noGraph = silentRun("graph-rag", "no_graph");
+    const sentence = summarise(
+      diff({ chunk_overlap: 0, chunk_overlap_pct: 0 }),
+      noGraph,
+      noGraph,
+      emptySideCount(noGraph, noGraph),
+    );
+
+    expect(sentence).not.toContain("the index is empty");
+    expect(sentence).not.toContain("make index");
+    expect(sentence).toContain("The index is not what stopped them");
+    // The pipeline's own reason is surfaced rather than translated here, so a
+    // technique added later needs no edit to this file.
+    expect(sentence).toContain("no_graph");
+  });
+
+  it("does NOT call one empty side a retrieval disagreement", () => {
+    // The bug that was live in the UI: Graph RAG with no graph against any
+    // working technique. `grounded in different source passages` is false — one
+    // side is grounded in nothing.
+    const sentence = summarise(
+      diff({
+        chunk_overlap: 0,
+        chunk_overlap_pct: 0,
+        same_technique: false,
+        only_b_chunk_ids: ["dynamo.md#0", "dynamo.md#1"],
+      }),
+      silentRun("graph-rag", "no_graph"),
+      run({ technique: "standard-rag" }),
+      1,
+    );
+
+    expect(sentence).not.toContain("different source passages");
+    expect(sentence).not.toContain("completely different evidence");
+    expect(sentence).toContain("no evidence disagreement");
+    expect(sentence).toContain("A (graph-rag) retrieved nothing at all (no_graph)");
+    expect(sentence).toContain("only B (standard-rag) retrieved anything");
+  });
+
+  it("names the correct side when it is B that retrieved nothing", () => {
+    const sentence = summarise(
+      diff({ chunk_overlap: 0, chunk_overlap_pct: 0, same_technique: false }),
+      run({ technique: "standard-rag" }),
+      silentRun("graph-rag", "no_graph"),
+      1,
+    );
+
+    expect(sentence).toContain("B (graph-rag) retrieved nothing at all");
+    expect(sentence).toContain("only A (standard-rag) retrieved anything");
+  });
+
+  it("omits the parenthetical when the pipeline gave no reason", () => {
+    const sentence = summarise(
+      diff({ chunk_overlap: 0, chunk_overlap_pct: 0, same_technique: false }),
+      silentRun("graph-rag", ""),
+      run(),
+      1,
+    );
+
+    expect(sentence).toContain("retrieved nothing at all,");
+    expect(sentence).not.toContain("()");
   });
 });
 
@@ -212,7 +283,7 @@ describe("summarise — branch boundaries", () => {
       diff({ chunk_overlap_pct: 99.9, chunk_overlap: 999, same_technique: false }),
       run(),
       run(),
-      false,
+      0,
     );
 
     expect(sentence).not.toContain("identical evidence");
@@ -224,83 +295,39 @@ describe("summarise — branch boundaries", () => {
       diff({ chunk_overlap: 1, chunk_overlap_pct: 25, same_technique: false }),
       run(),
       run(),
-      false,
+      0,
     );
 
     expect(sentence).not.toContain("completely different evidence");
     expect(sentence).toContain("agreed on 1 of the retrieved chunks");
   });
 
-  it("lets no-evidence win over the identical-evidence branch", () => {
+  it("lets an empty side win over the identical-evidence branch", () => {
     // Defensive: 100% and "nothing retrieved" cannot both be true from the real
     // backend (an empty side makes the denominator 0, so pct is 0). This pins
     // the precedence anyway, because the branch order is what enforces it.
-    const sentence = summarise(diff({ chunk_overlap_pct: 100 }), run(), run(), true);
+    const empty = silentRun("standard-rag", "empty_index");
 
-    expect(sentence).toContain("neither side retrieved anything");
-  });
-});
-
-// --- Known bugs ------------------------------------------------------------
-//
-// `test.fails` asserts that the test currently FAILS. These two encode the
-// CORRECT expectation, not the current behaviour: when the bug is fixed the
-// suite goes red here, and whoever fixes it deletes the `.fails`. Written this
-// way on purpose — writing them to match today's output would bless a sentence
-// that is false.
-
-describe("summarise — KNOWN BUGS (see the report)", () => {
-  test.fails(
-    "BUG: one side retrieving nothing is reported as a retrieval disagreement",
-    () => {
-      // Reachable today: Graph RAG with no .graph.json returns zero chunks and a
-      // boilerplate answer, while any other technique on the same built index
-      // returns chunks. `hasNoEvidence` is false (only ONE side is empty), so the
-      // overlap-0 branch fires and tells the reader the two answers are "grounded
-      // in different source passages". One of them is grounded in nothing at all.
-      const sentence = summarise(
-        diff({
-          chunk_overlap: 0,
-          chunk_overlap_pct: 0,
-          same_technique: false,
-          only_b_chunk_ids: ["dynamo.md#0", "dynamo.md#1"],
-        }),
-        run({ technique: "graph-rag", retrieved_chunks: [] }),
-        run({ technique: "standard-rag" }),
-        false,
-      );
-
-      expect(sentence).not.toContain("different source passages");
-    },
-  );
-
-  test.fails("BUG: one empty technique is blamed on an empty index", () => {
-    // Same root cause, other side of it: comparing Graph RAG with itself when no
-    // graph has been built leaves BOTH sides empty on a perfectly good index, and
-    // the reader is told to run `make index` — a command that will not help.
-    const noGraph = run({ technique: "graph-rag", retrieved_chunks: [] });
-    const sentence = summarise(
-      diff({ chunk_overlap: 0, chunk_overlap_pct: 0 }),
-      noGraph,
-      noGraph,
-      hasNoEvidence(noGraph, noGraph),
+    expect(summarise(diff({ chunk_overlap_pct: 100 }), empty, empty, 2)).toContain(
+      "neither side retrieved anything",
     );
-
-    expect(sentence).not.toContain("the index is empty");
+    expect(summarise(diff({ chunk_overlap_pct: 100 }), empty, run(), 1)).toContain(
+      "retrieved nothing at all",
+    );
   });
 });
 
-// --- hasNoEvidence ---------------------------------------------------------
+// --- emptySideCount --------------------------------------------------------
 
-describe("hasNoEvidence", () => {
-  it("is true only when both sides retrieved nothing", () => {
+describe("emptySideCount", () => {
+  it("distinguishes none, one and both — the `&&` that caused the bug could not", () => {
     const empty = run({ retrieved_chunks: [] });
     const full = run();
 
-    expect(hasNoEvidence(empty, empty)).toBe(true);
-    expect(hasNoEvidence(empty, full)).toBe(false);
-    expect(hasNoEvidence(full, empty)).toBe(false);
-    expect(hasNoEvidence(full, full)).toBe(false);
+    expect(emptySideCount(full, full)).toBe(0);
+    expect(emptySideCount(empty, full)).toBe(1);
+    expect(emptySideCount(full, empty)).toBe(1);
+    expect(emptySideCount(empty, empty)).toBe(2);
   });
 });
 
