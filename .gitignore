@@ -1,7 +1,13 @@
 # Python
+#
+# No trailing slash on .venv or backend/.chroma: a trailing slash matches a
+# DIRECTORY only, and in a worktree these two are symlinks pointing at the main
+# checkout's copies so the four of them share one venv and one built index. A
+# symlink is not a directory, so `.venv/` did not match it and both showed up as
+# untracked in every worktree — one `git add -A` away from being committed.
+.venv
 __pycache__/
 *.py[cod]
-.venv/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
@@ -17,7 +23,7 @@ next-env.d.ts
 *.tsbuildinfo
 
 # Data written at runtime
-backend/.chroma/
+backend/.chroma
 backend/*.db
 backend/.usage.json
 # Graph RAG's extracted knowledge graph — derived from the corpus, rebuilt with
