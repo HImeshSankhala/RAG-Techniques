@@ -4,6 +4,8 @@ Each of these asserts that an *accident* is impossible — a wrong model, an
 uncapped output, a runaway loop. None of them make a paid call.
 """
 
+import inspect
+
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -11,8 +13,16 @@ from pydantic import ValidationError
 from api.main import app
 from core import llm
 from core.config import Settings, settings
+from core.ledger import LLMLedger
+from core.llm import LLMResponse
 
 client = TestClient(app)
+
+
+def _response(backend: llm.Backend, tokens_in: int, tokens_out: int) -> LLMResponse:
+    return LLMResponse(
+        text="", input_tokens=tokens_in, output_tokens=tokens_out, model="m", backend=backend
+    )
 
 
 # --- Allowlist: only Haiku is reachable ------------------------------------
@@ -92,6 +102,52 @@ def test_cost_estimate_uses_haiku_rates() -> None:
     # 1M in + 1M out at $1 / $5.
     assert llm.estimate_cost_usd(1_000_000, 1_000_000) == pytest.approx(6.0)
     assert llm.estimate_cost_usd(0, 0) == 0.0
+
+
+def test_a_paid_call_cannot_be_reported_as_free() -> None:
+    """The ledger costs what it counted, from the response that carried both."""
+    ledger = LLMLedger("claude-haiku-4-5")
+    ledger.record(_response("anthropic", 1_000_000, 1_000_000))
+
+    assert ledger.backend == "anthropic"
+    assert ledger.cost_estimate_usd == pytest.approx(6.0)
+    assert ledger.metadata(
+        latency_ms=1.0, retrieval_passes=1, termination_reason="single_pass"
+    ).cost_estimate_usd == pytest.approx(6.0)
+
+
+def test_a_later_free_call_does_not_erase_an_earlier_paid_one() -> None:
+    """Six pipelines used to read the backend off the LAST response.
+
+    Nothing routes two backends through one run today, which is exactly why this
+    is worth pinning: the day something does, the total must not round to free.
+    """
+    ledger = LLMLedger(settings.ollama_model)
+    ledger.record(_response("anthropic", 1_000_000, 1_000_000))
+    ledger.record(_response("ollama", 10, 10))
+
+    assert ledger.backend == "anthropic"
+    assert ledger.cost_estimate_usd > 0
+
+
+def test_a_pipeline_has_no_way_to_report_its_own_cost() -> None:
+    """Safety by construction, not by every author remembering the ternary.
+
+    `metadata()` takes no backend, token or cost argument, so a pipeline cannot
+    pass `cost_estimate_usd=0.0` — there is nowhere to pass it.
+    """
+    parameters = set(inspect.signature(LLMLedger.metadata).parameters)
+
+    assert not parameters & {"backend", "llm_calls", "tokens_in", "tokens_out"}
+    assert "cost_estimate_usd" not in parameters
+
+
+def test_local_calls_are_exactly_free() -> None:
+    ledger = LLMLedger(settings.ollama_model)
+    ledger.record(_response("ollama", 5000, 500))
+
+    assert ledger.backend == "ollama"
+    assert ledger.cost_estimate_usd == 0.0
 
 
 def test_usage_endpoint_reports_the_session_cap() -> None:

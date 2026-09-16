@@ -29,7 +29,8 @@ stop.
 
 from core import embeddings, llm, vectorstore
 from core.config import settings
-from core.pipeline import Chunk, Metadata, RAGPipeline, RAGResult, StepRecorder
+from core.ledger import LLMLedger
+from core.pipeline import Chunk, RAGPipeline, RAGResult, StepRecorder
 from core.prompting import SYSTEM_PROMPT, build_prompt, groundedness
 
 # Retrieval passes come from config, beside the other spend caps — an iteration
@@ -85,6 +86,7 @@ class MultiPassRAG(RAGPipeline):
     def run(self, query: str, model: str | None = None) -> RAGResult:
         steps = StepRecorder()
         model = model or settings.default_model
+        ledger = LLMLedger(model)
 
         with steps.record("Retrieve (pass 1)") as step:
             chunks = vectorstore.query(embeddings.embed_query(query), settings.top_k)
@@ -102,9 +104,7 @@ class MultiPassRAG(RAGPipeline):
                     "Run `make index` and try again."
                 ),
                 steps=steps.steps,
-                metadata=Metadata(
-                    model=model,
-                    backend=llm.resolve_backend(model),
+                metadata=ledger.metadata(
                     latency_ms=steps.elapsed_ms,
                     retrieval_passes=1,
                     termination_reason="empty_index",
@@ -112,11 +112,11 @@ class MultiPassRAG(RAGPipeline):
             )
 
         with steps.record("Draft answer") as step:
-            response = llm.generate(SYSTEM_PROMPT, build_prompt(query, chunks), model=model)
+            response = ledger.record(
+                llm.generate(SYSTEM_PROMPT, build_prompt(query, chunks), model=model)
+            )
             step.detail = _generation_detail(response)
 
-        tokens_in, tokens_out = response.input_tokens, response.output_tokens
-        llm_calls = 1
         passes = 1
         reason = "max_iterations"
         # Every gap the critique has already asked for. Without this the loop has
@@ -133,16 +133,15 @@ class MultiPassRAG(RAGPipeline):
                 # budget, and this runs once per pass.
                 # reason: without it this model answers COMPLETE to everything and
                 # the loop is a no-op. Measured — see core/llm.py.
-                critique = llm.generate(
-                    CRITIQUE_SYSTEM,
-                    _build_critique_prompt(query, chunks, response.text, asked),
-                    model=model,
-                    helper=True,
-                    reason=True,
+                critique = ledger.record(
+                    llm.generate(
+                        CRITIQUE_SYSTEM,
+                        _build_critique_prompt(query, chunks, response.text, asked),
+                        model=model,
+                        helper=True,
+                        reason=True,
+                    )
                 )
-                llm_calls += 1
-                tokens_in += critique.input_tokens
-                tokens_out += critique.output_tokens
 
                 gaps = _parse_gaps(critique.text)
                 asked.extend(gaps)
@@ -196,33 +195,20 @@ class MultiPassRAG(RAGPipeline):
             chunks = merged
 
             with steps.record(f"Redraft with {len(chunks)} chunks (pass {passes})") as step:
-                response = llm.generate(SYSTEM_PROMPT, build_prompt(query, chunks), model=model)
-                llm_calls += 1
-                tokens_in += response.input_tokens
-                tokens_out += response.output_tokens
+                response = ledger.record(
+                    llm.generate(SYSTEM_PROMPT, build_prompt(query, chunks), model=model)
+                )
                 step.detail = _generation_detail(response)
-
-        cost = (
-            llm.estimate_cost_usd(tokens_in, tokens_out)
-            if response.backend == "anthropic"
-            else 0.0
-        )
 
         return RAGResult(
             answer=response.text,
             retrieved_chunks=chunks,
             steps=steps.steps,
-            metadata=Metadata(
-                model=response.model,
-                backend=response.backend,
+            metadata=ledger.metadata(
                 latency_ms=steps.elapsed_ms,
-                llm_calls=llm_calls,
                 retrieval_passes=passes,
-                tokens_in=tokens_in,
-                tokens_out=tokens_out,
                 termination_reason=reason,
                 groundedness=groundedness(response.text, chunks),
-                cost_estimate_usd=round(cost, 6),
             ),
         )
 

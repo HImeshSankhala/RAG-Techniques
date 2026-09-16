@@ -1,4 +1,4 @@
-.PHONY: setup dev dev-backend dev-frontend index test lint eval
+.PHONY: setup dev dev-backend dev-frontend index graph test lint eval
 
 # Python 3.11+ required. Full path, not bare `python3.12`, because an Anaconda
 # install earlier on PATH would otherwise shadow the Homebrew one. Override with:
@@ -29,6 +29,16 @@ dev-frontend:
 
 index:
 	cd backend && .venv/bin/python -m core.index
+
+# Graph RAG only. Separate from `index` and NOT a prerequisite of it: indexing is
+# five seconds and everyone needs it, extraction is one Ollama call per chunk and
+# only this one technique needs it. Measured on the current corpus: 43 calls,
+# ~3 minutes. Without it Graph RAG answers "the knowledge graph has not been
+# built yet" — so it is optional, not broken, and you should know the price
+# before you type it. Requires the index and a running Ollama.
+graph:
+	@echo "Extracting the knowledge graph: one Ollama call per chunk (~43 calls, ~3 min)."
+	cd backend && .venv/bin/python -m core.graph
 
 # Backend first: it is the slower and the more informative of the two, and a
 # frontend suite that runs in 250ms is not worth reordering for.

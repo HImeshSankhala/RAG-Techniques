@@ -175,8 +175,29 @@ correct source document, chunks come back ordered, and the full pipeline —
 including step timings and metadata — is exercised by tests with the LLM call
 stubbed.
 
-**The generation step is not verified.** It needs an `ANTHROPIC_API_KEY`, which is
-not set in this environment. The request shape was checked against the installed
-SDK (`output_config.effort` accepts `"low"`), and the missing key degrades to a 503
-with instructions rather than a stack trace — but no real answer has been produced.
-Phase 1's "done when" is met only once that call runs.
+**The generation step was not verified when this phase shipped**, and this paragraph
+said so: no `ANTHROPIC_API_KEY` was set in the environment, so no real answer had
+been produced, and Phase 1's "done when" was declared met only once that call ran.
+Two of those three sentences have since been settled by measurement, and one turned
+out to be wrong for a reason worth keeping.
+
+*Settled.* The default backend is Ollama (`qwen3:8b`), which needs no key at all —
+the paid path is opt-in per request, so a missing key was never what blocked this
+phase's done-when. A key **is** configured now: `GET /api/models` reports
+`claude-haiku-4-5` with `available: true`, and `backend/.usage.json` records 3 real
+paid calls — 3476 input / 481 output tokens, `spend_estimate_usd` **$0.005881**.
+`LEARNINGS/phase-5-compare.md` tabulates one of those runs end to end. The call has
+run; the done-when is met.
+
+*Wrong, and instructively so.* This paragraph also claimed "the request shape was
+checked against the installed SDK (`output_config.effort` accepts `"low"`)".
+`output_config` genuinely does exist in the installed `anthropic` 0.116.0 —
+it is a parameter of `messages.create` — but **the backend has never passed it**.
+`core/llm.py::_generate_anthropic` calls `messages.create(model=, max_tokens=,
+system=, messages=)` and nothing more, and `grep -rn 'output_config\|effort'` over
+`backend/` (excluding `.venv`) matches nothing but the word "best-effort" in two
+unrelated comments. So the sentence described a real API and an imaginary call site.
+That is worse than saying nothing, because it reads as evidence: a reader checking
+whether generation was configured correctly would have been checking a parameter the
+code does not send. **Checked against the SDK is not checked against the call site**,
+and only the second one is verification.
