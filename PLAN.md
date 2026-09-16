@@ -245,9 +245,13 @@ accidentally burn money.
    backend refuse further paid calls once exceeded in a run, so a stuck loop during
    development can't quietly rack up calls. Local (Ollama) is never capped — it's free.
 
-Budget reality check: Haiku is ~$0.004 per single-call query, so $5 is roughly 400–1000+
-queries even with Multi-Pass. The danger isn't normal use — it's an accident (a loop, or a
-wrong model). The guardrails above remove those accidents.
+Budget reality check: a single-call Haiku query costs **~$0.002 measured, ~$0.004 worst
+case** — the spread is the `max_tokens_answer` cap, since input is ~1200 tokens either way
+and output is billed 5x. The worst case is an answer that runs to the full 512-token cap;
+the measured figure is `.usage.json` after 3 real calls (3476 in / 481 out = $0.005881,
+$0.00196 each). So $5 is roughly 400–1000+ queries even with Multi-Pass, and that range is
+computed from the worst case on purpose. The danger isn't normal use — it's an accident (a
+loop, or a wrong model). The guardrails above remove those accidents.
 
 ---
 
