@@ -347,12 +347,46 @@ Building it also demonstrates engineering a fixed corpus never does — multipar
 per-session collection isolation, async re-indexing, TTL cleanup.
 
 **Why it is NOT the default, and the risk that makes this a real decision:** the demo
-corpus is deliberately rigged so techniques visibly diverge — `memtable` is a term dense
-retrieval ranks badly and BM25 nails (Fusion wins), and Cassandra's lineage is stated
-across two files (Graph RAG multi-hop wins). An arbitrary uploaded PDF usually has none
-of those properties. Someone uploads a 3-page résumé, all nine techniques return the same
-chunk and the same answer, and the reviewer concludes the techniques don't matter. **A
-badly-scoped version of this feature actively undermines the project's thesis.**
+corpus is deliberately rigged so techniques visibly diverge. An arbitrary uploaded PDF
+usually has none of those properties. Someone uploads a 3-page résumé, all nine
+techniques return the same chunk and the same answer, and the reviewer concludes the
+techniques don't matter. **A badly-scoped version of this feature actively undermines
+the project's thesis.**
+
+**The two examples this argument used to cite are dead.** It named `memtable` (a term
+dense retrieval ranks badly and BM25 nails — Fusion wins) and Cassandra's lineage
+(stated across two files — Graph RAG multi-hop wins). The corpus expansion to 9
+documents / 43 chunks destroyed both, and this section was not updated for two phases:
+
+- `What is a memtable?` — dense's **top** hit is `bigtable.md#2`, and that chunk now
+  *contains* the definition (`## Storage: SSTables and the memtable`). BM25 puts it
+  second. Nothing diverges.
+- Cassandra's lineage is now stated whole, in a single sentence, in **four** chunks —
+  `cassandra.md#0`, `cassandra.md#4`, `bigtable.md#3`, `dynamo.md#4`. `bigtable.md#3`
+  says it outright: Cassandra combines Bigtable's column-family data model with the
+  replication approach of Dynamo. One hop answers it.
+
+**Live replacements, measured against the 43-chunk index:**
+
+- *Fusion / keyword wins:* `reversed hostnames`. BM25's top-4 is
+  `bigtable.md#0, #1, #2, #3` — 4 of 4 gold. Dense's top-4 is
+  `dynamo.md#3, raft.md#2, raft.md#3, chubby.md#2` — zero Bigtable. Total divergence,
+  not a reordering.
+- *Graph RAG multi-hop:* "What replaced ZooKeeper in newer Kafka, and what was that
+  protocol designed to be easier than?" `KRaft` appears in exactly one chunk of 43
+  (`kafka.md#4`), **no chunk contains both `Kafka` and `Paxos`**, and dense's top-4
+  (`kafka.md#4, chubby.md#4, kafka.md#1, kafka.md#0`) contains none of the three chunks
+  that say Raft was designed to be more understandable than Paxos. Caveat, stated
+  because it weakens the example: BM25 alone lands `raft.md#1` at rank 2, so this is a
+  clean *dense* failure and only a partial graph-only win.
+
+**What the expiry does to the decision — the owner's call, not this document's.** The
+risk side is unchanged, and arguably sharpened: a corpus rigged on purpose stopped being
+rigged after a routine content edit, with no test and no reader noticing. That is direct
+evidence for how fragile "the techniques visibly diverge" is on prose nobody curated for
+divergence — and an upload path has no curator at all. The upside side is untouched; it
+never rested on these two examples. What is genuinely gone is the comfort that the
+curated corpus keeps its properties for free.
 
 **If built, it is additive, never a replacement.** The curated corpus stays the default
 and the demo path. Upload is a labelled second mode: "compare on the demo corpus to see
