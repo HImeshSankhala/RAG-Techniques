@@ -37,7 +37,8 @@ import networkx as nx
 from core import graph as kg
 from core import llm, retrieval, vectorstore
 from core.config import settings
-from core.pipeline import Chunk, Metadata, RAGPipeline, RAGResult, StepRecorder
+from core.ledger import LLMLedger
+from core.pipeline import Chunk, RAGPipeline, RAGResult, StepRecorder
 from core.prompting import SYSTEM_PROMPT, build_prompt, groundedness
 
 NO_GRAPH_ANSWER = (
@@ -52,6 +53,7 @@ class GraphRAG(RAGPipeline):
     def run(self, query: str, model: str | None = None) -> RAGResult:
         steps = StepRecorder()
         model = model or settings.default_model
+        ledger = LLMLedger(model)
 
         with steps.record("Load knowledge graph") as step:
             stored = kg.load()
@@ -73,10 +75,11 @@ class GraphRAG(RAGPipeline):
             return RAGResult(
                 answer=NO_GRAPH_ANSWER,
                 steps=steps.steps,
-                metadata=Metadata(
-                    model=model,
-                    backend=llm.resolve_backend(model),
+                metadata=ledger.metadata(
                     latency_ms=steps.elapsed_ms,
+                    # Zero, not one: nothing was traversed and nothing was
+                    # embedded, so this run retrieved nothing at all.
+                    retrieval_passes=0,
                     termination_reason="no_graph",
                 ),
             )
@@ -136,9 +139,7 @@ class GraphRAG(RAGPipeline):
                     "Run `make index` and try again."
                 ),
                 steps=steps.steps,
-                metadata=Metadata(
-                    model=model,
-                    backend=llm.resolve_backend(model),
+                metadata=ledger.metadata(
                     latency_ms=steps.elapsed_ms,
                     retrieval_passes=1,
                     termination_reason="empty_index",
@@ -152,40 +153,31 @@ class GraphRAG(RAGPipeline):
         with steps.record("Compare against plain dense retrieval") as step:
             step.detail = _describe_gain(query, chunks)
 
+        # The only call this pipeline records, and deliberately so: the 43
+        # extraction calls were paid at index time and are reported in the trace
+        # instead. Recording them here would make every query look 44x more
+        # expensive than it is; hiding them entirely would make the technique
+        # look free.
         with steps.record("Generate answer") as step:
-            response = llm.generate(SYSTEM_PROMPT, build_prompt(query, chunks), model=model)
+            response = ledger.record(
+                llm.generate(SYSTEM_PROMPT, build_prompt(query, chunks), model=model)
+            )
             step.detail = (
                 f"{response.model} ({response.backend}): "
                 f"{response.input_tokens} in / {response.output_tokens} out"
             )
 
-        cost = (
-            llm.estimate_cost_usd(response.input_tokens, response.output_tokens)
-            if response.backend == "anthropic"
-            else 0.0
-        )
-
         return RAGResult(
             answer=response.text,
             retrieved_chunks=chunks,
             steps=steps.steps,
-            metadata=Metadata(
-                model=response.model,
-                backend=response.backend,
+            metadata=ledger.metadata(
                 latency_ms=steps.elapsed_ms,
-                # One. The 43 extraction calls were paid at index time and are
-                # reported in the trace instead — counting them here would make
-                # every query look 44x more expensive than it is, and hiding
-                # them entirely would make the technique look free.
-                llm_calls=1,
                 retrieval_passes=1,
-                tokens_in=response.input_tokens,
-                tokens_out=response.output_tokens,
                 # A traversal outcome: why the walk stopped. Not a strategy
                 # label — see PLAN.md:145.
                 termination_reason=walk.reason,
                 groundedness=groundedness(response.text, chunks),
-                cost_estimate_usd=round(cost, 6),
             ),
         )
 

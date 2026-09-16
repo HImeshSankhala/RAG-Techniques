@@ -17,7 +17,8 @@ what a technique is actually for: naming the stages and narrating them.
 from core import llm, retrieval
 from core.config import settings
 from core.fusion import RRF_K
-from core.pipeline import Metadata, RAGPipeline, RAGResult, StepRecorder
+from core.ledger import LLMLedger
+from core.pipeline import RAGPipeline, RAGResult, StepRecorder
 from core.prompting import SYSTEM_PROMPT, build_prompt, groundedness
 
 
@@ -27,6 +28,7 @@ class FusionRAG(RAGPipeline):
     def run(self, query: str, model: str | None = None) -> RAGResult:
         steps = StepRecorder()
         model = model or settings.default_model
+        ledger = LLMLedger(model)
 
         with steps.record("Retrieve (dense + BM25 in parallel)") as step:
             # Scatter-gather and the merge both live in core.retrieval.hybrid,
@@ -62,10 +64,8 @@ class FusionRAG(RAGPipeline):
                     "Run `make index` and try again."
                 ),
                 steps=steps.steps,
-                metadata=Metadata(
-                    model=model,
-                    # Derived, not reported — no call was made. See standard_rag.
-                    backend=llm.resolve_backend(model),
+                # Backend derived, not reported — no call was made. See standard_rag.
+                metadata=ledger.metadata(
                     latency_ms=steps.elapsed_ms,
                     retrieval_passes=1,
                     termination_reason="empty_index",
@@ -73,35 +73,25 @@ class FusionRAG(RAGPipeline):
             )
 
         with steps.record("Generate answer") as step:
-            response = llm.generate(SYSTEM_PROMPT, build_prompt(query, chunks), model=model)
+            response = ledger.record(
+                llm.generate(SYSTEM_PROMPT, build_prompt(query, chunks), model=model)
+            )
             step.detail = (
                 f"{response.model} ({response.backend}): "
                 f"{response.input_tokens} in / {response.output_tokens} out"
             )
 
-        cost = (
-            llm.estimate_cost_usd(response.input_tokens, response.output_tokens)
-            if response.backend == "anthropic"
-            else 0.0
-        )
-
         return RAGResult(
             answer=response.text,
             retrieved_chunks=chunks,
             steps=steps.steps,
-            metadata=Metadata(
-                model=response.model,
-                backend=response.backend,
+            metadata=ledger.metadata(
                 latency_ms=steps.elapsed_ms,
-                llm_calls=1,
                 # Still one pass: two retrievers ran, but only once each. The
                 # count that changes here is retrievers, not passes — which is
                 # exactly what distinguishes Fusion from Multi-Pass.
                 retrieval_passes=1,
-                tokens_in=response.input_tokens,
-                tokens_out=response.output_tokens,
                 termination_reason="single_pass",
                 groundedness=groundedness(response.text, chunks),
-                cost_estimate_usd=round(cost, 6),
             ),
         )

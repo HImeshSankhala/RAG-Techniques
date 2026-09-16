@@ -46,7 +46,8 @@ from dataclasses import dataclass
 
 from core import keyword, llm, retrieval
 from core.config import settings
-from core.pipeline import Chunk, Metadata, RAGPipeline, RAGResult, StepRecorder
+from core.ledger import LLMLedger
+from core.pipeline import Chunk, RAGPipeline, RAGResult, StepRecorder
 from core.prompting import SYSTEM_PROMPT, build_prompt, groundedness
 
 # The strategies the planner may call, sharing Auto RAG's vocabulary on purpose:
@@ -142,13 +143,11 @@ class AgenticRAG(RAGPipeline):
     def run(self, query: str, model: str | None = None) -> RAGResult:
         steps = StepRecorder()
         model = model or settings.default_model
+        ledger = LLMLedger(model)
 
         evidence: list[Chunk] = []
         seen: set[str] = set()
         history: list[Action] = []
-        llm_calls = 0
-        tokens_in = 0
-        tokens_out = 0
         reason = "max_iterations"
 
         for iteration in range(1, settings.agentic_max_iterations + 1):
@@ -159,21 +158,21 @@ class AgenticRAG(RAGPipeline):
             # would immediately have to be re-supplied as input.
             label = "Plan" if iteration == 1 else "Assess & re-plan"
             with steps.record(f"{label} (iteration {iteration})") as step:
-                plan = llm.generate(
-                    PLANNER_SYSTEM,
-                    _build_plan_prompt(query, evidence, history),
-                    model=model,
-                    # helper: one line of output needs a fraction of an answer's
-                    # budget, and this runs once per iteration.
-                    # reason: load-bearing. With thinking off this model answers
-                    # the sufficiency question the agreeable way and the loop is a
-                    # no-op — the same result Multi-Pass measured. See core/llm.py.
-                    helper=True,
-                    reason=True,
+                plan = ledger.record(
+                    llm.generate(
+                        PLANNER_SYSTEM,
+                        _build_plan_prompt(query, evidence, history),
+                        model=model,
+                        # helper: one line of output needs a fraction of an
+                        # answer's budget, and this runs once per iteration.
+                        # reason: load-bearing. With thinking off this model
+                        # answers the sufficiency question the agreeable way and
+                        # the loop is a no-op — the same result Multi-Pass
+                        # measured. See core/llm.py.
+                        helper=True,
+                        reason=True,
+                    )
                 )
-                llm_calls += 1
-                tokens_in += plan.input_tokens
-                tokens_out += plan.output_tokens
 
                 action, understood = parse_plan(plan.text)
                 # The raw reply, not just the decision. When an agent loop goes
@@ -221,7 +220,7 @@ class AgenticRAG(RAGPipeline):
                 step.detail = _search_detail(action, found, new)
 
             if not evidence:
-                return _empty_index(steps, plan, llm_calls, tokens_in, tokens_out)
+                return _empty_index(steps, ledger)
 
             if not new:
                 # A search the agent had not run before, returning only chunks it
@@ -238,47 +237,32 @@ class AgenticRAG(RAGPipeline):
             step.detail = _describe_gain(query, evidence)
 
         with steps.record(f"Answer from {len(evidence)} chunks") as step:
-            response = llm.generate(SYSTEM_PROMPT, build_prompt(query, evidence), model=model)
-            llm_calls += 1
-            tokens_in += response.input_tokens
-            tokens_out += response.output_tokens
+            response = ledger.record(
+                llm.generate(SYSTEM_PROMPT, build_prompt(query, evidence), model=model)
+            )
             step.detail = (
                 f"{response.model} ({response.backend}): "
                 f"{response.input_tokens} in / {response.output_tokens} out"
             )
 
-        cost = (
-            llm.estimate_cost_usd(tokens_in, tokens_out)
-            if response.backend == "anthropic"
-            else 0.0
-        )
-
         return RAGResult(
             answer=response.text,
             retrieved_chunks=evidence,
             steps=steps.steps,
-            metadata=Metadata(
-                model=response.model,
-                backend=response.backend,
+            metadata=ledger.metadata(
                 latency_ms=steps.elapsed_ms,
-                llm_calls=llm_calls,
                 # Searches actually executed. A planner call that decided to stop
                 # retrieved nothing and is counted in `llm_calls` instead — the
                 # two numbers diverging is how the compare view shows that this
                 # technique spends calls on deciding, not only on retrieving.
                 retrieval_passes=len(history),
-                tokens_in=tokens_in,
-                tokens_out=tokens_out,
                 termination_reason=reason,
                 groundedness=groundedness(response.text, evidence),
-                cost_estimate_usd=round(cost, 6),
             ),
         )
 
 
-def _empty_index(
-    steps: StepRecorder, plan: llm.LLMResponse, llm_calls: int, tokens_in: int, tokens_out: int
-) -> RAGResult:
+def _empty_index(steps: StepRecorder, ledger: LLMLedger) -> RAGResult:
     """Nothing indexed. Reported, not raised — and the planning already paid for
     is reported with it, the way Auto RAG reports its router's tokens."""
     return RAGResult(
@@ -287,14 +271,9 @@ def _empty_index(
             "Run `make index` and try again."
         ),
         steps=steps.steps,
-        metadata=Metadata(
-            model=plan.model,
-            backend=plan.backend,
+        metadata=ledger.metadata(
             latency_ms=steps.elapsed_ms,
-            llm_calls=llm_calls,
             retrieval_passes=1,
-            tokens_in=tokens_in,
-            tokens_out=tokens_out,
             termination_reason="empty_index",
         ),
     )
