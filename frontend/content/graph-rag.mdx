@@ -99,23 +99,37 @@ very question above, and the site would be lying if it showed you the diagram an
 | Sources cited | 0.5 | 0.33 |
 | Second hop | wrong | **wrong, identically** |
 
-Graph RAG retrieves `kafka.md#4, bigtable.md#0, gfs.md#1, kafka.md#0`. `raft.md#1` — the
-chunk the whole example exists to reach — is **never in the top 4**.
+`raft.md#1` — the chunk the whole example exists to reach — is **never in the top 4**.
 
 The reason is not a missed walk. Instrumented at two and three hops, with and without the
-extraction's hallucinated edges, every target chunk is *inside* the traversal every time
-and never ranked into the top 4. The ball reached from `Kafka` is 53 nodes touching **35 of
-43 chunks — 81% of the corpus.**
+extraction's hallucinated edges, `raft.md#1` is *inside* the traversal every time and is
+never selected out of it. What the walk returns is most of the corpus:
 
-So the graph is not acting as a filter. Once the walk returns four-fifths of everything,
-selection *within* it does all the work — and a graph has no similarity signal to select
-with. Four ranking rules were measured (depth-sorted, round-robin, edge-depth-weighted,
-seed-coverage); the best one ships and still loses.
+| | first extraction | a rebuild |
+|---|---|---|
+| Entities | 293 | 291 |
+| Ball from the query's entities | 53 nodes | 56 nodes |
+| Chunks reached | 35 of 43 — **81%** | 32 of 43 — **74%** |
+| Graph RAG's top 4 | `kafka.md#4, bigtable.md#0, gfs.md#1, kafka.md#0` | `kafka.md#4, bigtable.md#0, spanner.md#2, chubby.md#4` |
+| `raft.md#1` in the top 4 | no | no |
+
+**Two columns, because those are two runs of `python -m core.graph` over an unchanged
+corpus.** Extraction is 43 sampled LLM calls, so the graph is not a function of the
+documents the way an embedding index is — rebuild it and the entity count moves, the ball
+changes size, and half the top 4 turns over. Your own build will match neither column.
+Every figure above is a sample, and the argument deliberately does not rest on one.
+
+What survives both: the ball swallows the majority of a 43-chunk corpus, the chunk the
+example needs is reached, and it still does not get selected. **The graph is not acting as
+a filter.** Once the walk returns three-quarters of everything, selection *within* it does
+all the work — and a graph has no similarity signal to select with. Four ranking rules were
+measured (depth-sorted, round-robin, edge-depth-weighted, seed-coverage); the best one ships
+and still loses.
 
 **The lesson is about corpus size, not about graphs.** Nine documents are small enough that
 two hops reach nearly everything. Multi-hop retrieval pays off when the graph is sparse
-relative to the corpus — thousands of documents where two hops reach dozens, not 81%. The
-technique is not wrong; this corpus is too small for it to be right.
+relative to the corpus — thousands of documents where two hops reach dozens, not three
+quarters. The technique is not wrong; this corpus is too small for it to be right.
 
 The obvious repair, not built here because PLAN.md specifies entity seeding: seed the walk
 from dense retrieval's top-k and expand one hop, instead of seeding from query entities.

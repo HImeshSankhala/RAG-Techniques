@@ -78,6 +78,14 @@ Time O(C) model calls + O(T) insertions for C chunks and T triples; space O(V + 
 Measured: C = 43, T = 308, V = 293, E = 308, 184 s wall clock. The LLM calls
 dominate by five orders of magnitude — graph building itself is noise.
 
+**Those are one build's numbers, and a rebuild does not reproduce them.** Extraction
+is 43 sampled model calls, so V, E and T are properties of a *run*, not of the
+corpus. A second build over the identical 43 chunks gave V = 291, E = 308, T = 308
+in 184 s. Only C is fixed. This is the one index in the project that is not a
+function of its input: re-running `make index` re-embeds to the same vectors
+forever, while re-running `python -m core.graph` gives a different graph. Cite
+graph figures with the build they came from, or state the structure instead.
+
 **Traversal.** Multi-source breadth-first search from every matched entity at once,
 over the undirected view of a directed graph (a chain of facts does not care which
 way the arrows point). Multi-source rather than one walk per seed because the seeds
@@ -109,7 +117,11 @@ asserted, then raw membership.
 
 ## The measured result: it does not work on this corpus
 
-Run live, `qwen3:8b`, same query, same model:
+Run live, `qwen3:8b`, same query, same model. One run, and two of these rows are
+samples rather than constants: the Graph RAG chunks depend on which extraction built
+the graph (a rebuild gave `kafka.md#4`, `bigtable.md#0`, `spanner.md#2`,
+`chubby.md#4`), and latency and groundedness depend on the generation. The Standard
+RAG chunks are reproducible; nothing else in the table is.
 
 | | Standard RAG | Graph RAG |
 |---|---|---|
@@ -131,14 +143,25 @@ The diagnosis is not "the walk missed the evidence". Instrumented, on every
 configuration tried (2 or 3 hops, with and without the bad edges below):
 
     targets in the 2-hop ball : chubby.md#3, kafka.md#4, raft.md#0, raft.md#1, raft.md#2
-    targets in the top 4      : none
-    ball size                 : 53 nodes -> 35 of 43 chunks
+    hop-1 target in the top 4 : kafka.md#4
+    hop-2 target in the top 4 : none — raft.md#1 is reached and never selected
+    ball size                 : 53 nodes -> 35 of 43 chunks   (rebuild: 56 -> 32)
 
-**The 2-hop neighbourhood covers 81% of the corpus.** Recall is fine; the graph
-simply is not a *filter*. Nine documents produce 293 entities that are nearly
-connected, so "within two hops of Kafka" excludes almost nothing, and selection
-inside that ball has to do all the work — with no similarity signal, which is
-exactly the signal cosine distance has and this does not.
+This block previously read `targets in the top 4: none`, which contradicted the
+learn page's own listing of `kafka.md#4` first in Graph RAG's top 4 — and
+`kafka.md#4` is in the target list above. Both were written from the same run, so
+this was never a drift; it was a summary flattening two different targets into one
+row. The hop-1 chunk is always retrieved and always has been. **The claim the phase
+rests on is narrower and survives restating: the hop-2 chunk is inside the ball
+every time and never selected out of it.**
+
+**The 2-hop neighbourhood covers most of the corpus** — 81% on the build above, 74%
+on a rebuild. Recall is fine; the graph simply is not a *filter*. Nine documents
+produce roughly 290 entities that are nearly connected, so "within two hops of
+Kafka" excludes almost nothing, and selection inside that ball has to do all the
+work — with no similarity signal, which is exactly the signal cosine distance has
+and this does not. The exact percentage moves with each extraction; that it is a
+large majority does not, and the argument needs only the second fact.
 
 Graph RAG's premise requires a graph where two hops is a *small* fraction of the
 corpus. That is true of a 100k-document corpus with a sparse entity graph. It is
