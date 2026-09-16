@@ -33,7 +33,8 @@ that trade shows up honestly.
 
 from core import keyword, llm, retrieval
 from core.config import settings
-from core.pipeline import Chunk, Metadata, RAGPipeline, RAGResult, StepRecorder
+from core.ledger import LLMLedger
+from core.pipeline import Chunk, RAGPipeline, RAGResult, StepRecorder
 from core.prompting import SYSTEM_PROMPT, build_prompt, groundedness
 
 # The three retrieval paths, in the order the router prompt lists them.
@@ -98,18 +99,24 @@ class AutoRAG(RAGPipeline):
     def run(self, query: str, model: str | None = None) -> RAGResult:
         steps = StepRecorder()
         model = model or settings.default_model
+        ledger = LLMLedger(model)
 
         with steps.record("Route query") as step:
-            router = llm.generate(
-                ROUTER_SYSTEM,
-                f"Query: {query}",
-                model=model,
-                # The two flags that make this a router rather than a second
-                # worker. `helper` takes the tighter output budget; `reason=False`
-                # is load-bearing — see the module docstring, core/llm.py, and
-                # tests/test_llm_backends.py.
-                helper=True,
-                reason=False,
+            # Recorded like any other call. The router is cheap, not free, and
+            # that distinction is the phase's lesson — hiding it would misreport
+            # the technique's real cost in the compare view.
+            router = ledger.record(
+                llm.generate(
+                    ROUTER_SYSTEM,
+                    f"Query: {query}",
+                    model=model,
+                    # The two flags that make this a router rather than a second
+                    # worker. `helper` takes the tighter output budget;
+                    # `reason=False` is load-bearing — see the module docstring,
+                    # core/llm.py, and tests/test_llm_backends.py.
+                    helper=True,
+                    reason=False,
+                )
             )
             route, understood = parse_route(router.text)
 
@@ -135,51 +142,32 @@ class AutoRAG(RAGPipeline):
                     "Run `make index` and try again."
                 ),
                 steps=steps.steps,
-                metadata=Metadata(
-                    # Reported by the router rather than derived: unlike the other
-                    # techniques, this one has already made a real call by the
-                    # time it discovers the index is empty.
-                    model=router.model,
-                    backend=router.backend,
+                # Unlike the other techniques, this one has already made a real
+                # call by the time it discovers the index is empty — so the
+                # ledger reports the router's tokens, and what they cost.
+                metadata=ledger.metadata(
                     latency_ms=steps.elapsed_ms,
-                    llm_calls=1,
                     retrieval_passes=1,
-                    tokens_in=router.input_tokens,
-                    tokens_out=router.output_tokens,
                     termination_reason="empty_index",
                 ),
             )
 
         with steps.record("Generate answer") as step:
-            response = llm.generate(SYSTEM_PROMPT, build_prompt(query, chunks), model=model)
+            response = ledger.record(
+                llm.generate(SYSTEM_PROMPT, build_prompt(query, chunks), model=model)
+            )
             step.detail = (
                 f"{response.model} ({response.backend}): "
                 f"{response.input_tokens} in / {response.output_tokens} out"
             )
 
-        tokens_in = router.input_tokens + response.input_tokens
-        tokens_out = router.output_tokens + response.output_tokens
-        cost = (
-            llm.estimate_cost_usd(tokens_in, tokens_out)
-            if response.backend == "anthropic"
-            else 0.0
-        )
-
         return RAGResult(
             answer=response.text,
             retrieved_chunks=chunks,
             steps=steps.steps,
-            metadata=Metadata(
-                model=response.model,
-                backend=response.backend,
+            metadata=ledger.metadata(
                 latency_ms=steps.elapsed_ms,
-                # Two, and the router is one of them. Hiding it would misreport
-                # the technique's real cost in the compare view — the router is
-                # cheap, not free, and that distinction is the phase's lesson.
-                llm_calls=2,
                 retrieval_passes=1,
-                tokens_in=tokens_in,
-                tokens_out=tokens_out,
                 # A loop outcome, not a route. Auto RAG has no loop, so it stops
                 # the same way Standard and Fusion do. Putting `routed_hybrid`
                 # here made the compare view line a route up against a loop
@@ -188,7 +176,6 @@ class AutoRAG(RAGPipeline):
                 # a per-run decision belongs.
                 termination_reason="single_pass",
                 groundedness=groundedness(response.text, chunks),
-                cost_estimate_usd=round(cost, 6),
             ),
         )
 
