@@ -175,6 +175,28 @@ def test_answering_before_retrieving_anything_is_overruled(script) -> None:
     assert result.metadata.retrieval_passes == 1
 
 
+def test_a_silent_planner_costs_an_iteration_and_says_so(script) -> None:
+    """The specific unreadable reply this project keeps producing is no reply.
+
+    `reason=True` draws thinking tokens from the same `num_predict` budget as the
+    reply (see core/config.py), so a planner that thinks past the budget returns
+    an empty string. Measured at the 1024 that shipped: 7 of 51 planner calls.
+    It is the softer half of the same bug that made Multi-Pass's critique a no-op
+    — silence there was read as "no gaps" and stopped the loop, silence here is
+    caught by `understood` and costs one iteration on the baseline search — but
+    the cost is real and it must be legible in the trace rather than inferred
+    from an iteration that quietly did nothing.
+    """
+    script("", "ANSWER", "Final answer.")
+
+    result = AgenticRAG().run(QUERY)
+
+    assert "UNREADABLE PLAN" in result.steps[0].detail
+    assert "(empty reply)" in result.steps[0].detail
+    assert result.metadata.retrieval_passes == 1
+    assert result.retrieved_chunks, "silence must still degrade to the baseline search"
+
+
 def test_a_repeated_fallback_still_terminates(script) -> None:
     """The unreadable-plan path has no exit of its own — it relies on the repeat
     guard catching the identical fallback. This asserts that wiring."""

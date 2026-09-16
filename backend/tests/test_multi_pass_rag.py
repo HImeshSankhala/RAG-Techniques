@@ -137,6 +137,69 @@ def test_never_exceeds_the_pass_cap_regardless_of_the_critique(script) -> None:
     assert result.metadata.llm_calls <= 2 * MAX_PASSES - 1
 
 
+# Every exit the loop has, pinned as an exact (steps, llm_calls) PAIR. Both
+# numbers together, not either alone: two LEARNINGS files published a step count
+# that no run can produce — 8 steps reached on 4 calls — and every assertion in
+# this file passed, because `llm_calls` was pinned per path while the step count
+# was only ever checked as `> 3`. A wrong count is not a typo when the trace it
+# describes is what the compare view teaches from.
+#
+# Derived from `run()` at MAX_PASSES = 3, where the two steps a pass can record
+# are the retrieval and the redraft, and a critique is recorded before either:
+#
+#   1 Retrieve (pass 1)                 2 Draft answer
+#   3 Critique draft (pass 1)   -> no gaps here ends it at 3 steps / 2 calls
+#   4 Retrieve for gaps (pass 2)-> nothing new ends it at 4 steps / 2 calls
+#   5 Redraft (pass 2)
+#   6 Critique draft (pass 2)   -> no gaps here ends it at 6 steps / 4 calls
+#   7 Retrieve for gaps (pass 3)-> nothing new ends it at 7 steps / 4 calls
+#   8 Redraft (pass 3)          -> `passes` now 3, the while test fails: 8 / 5
+#
+# So calls run 2, 2, 4, 4, 5 against steps 3, 4, 6, 7, 8 — the pair moves in
+# steps of two through a critique-plus-redraft, and 8 steps costs 5 calls.
+@pytest.mark.parametrize(
+    ("replies", "reason", "expected_steps", "expected_calls"),
+    [
+        # The critique is satisfied immediately: no retrieval for gaps at all.
+        (("Draft.", "COMPLETE"), "no_gaps_found", 3, 2),
+        # A gap the corpus cannot fill, found on the first critique. The gap query
+        # repeats the question, so its top-2 are already among pass 1's top-4.
+        (("Draft.", QUERY), "no_new_evidence", 4, 2),
+        # The technique's happy path: one gap, retrieved, redrafted, then done.
+        (
+            ("Draft.", "hinted handoff replica failure", "Redraft.", "COMPLETE"),
+            "gaps_closed",
+            6,
+            4,
+        ),
+        # The same dead end one pass later: a real gap first, then an unfillable
+        # one. Costs the redraft that the early exit above never reaches.
+        (
+            ("Draft.", "hinted handoff replica failure", "Redraft.", QUERY),
+            "no_new_evidence",
+            7,
+            4,
+        ),
+        # The guarantee: a critique that never says COMPLETE still stops.
+        (
+            ("d1", "vector clocks reconciliation", "d2", "merkle trees anti-entropy", "d3"),
+            "max_iterations",
+            8,
+            5,
+        ),
+    ],
+)
+def test_each_termination_path_has_an_exact_step_and_call_count(
+    script, replies: tuple[str, ...], reason: str, expected_steps: int, expected_calls: int
+) -> None:
+    script(*replies)
+
+    result = MultiPassRAG().run(QUERY)
+
+    assert result.metadata.termination_reason == reason
+    assert (len(result.steps), result.metadata.llm_calls) == (expected_steps, expected_calls)
+
+
 # --- Evidence accumulates ----------------------------------------------------
 
 
