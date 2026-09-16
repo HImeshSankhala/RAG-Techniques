@@ -213,12 +213,20 @@ compaction?"`, local qwen3:8b:
 
 | | Standard RAG | Multi-Pass RAG |
 |---|---|---|
-| steps | 3 | **8** |
+| steps | 3 | **7** |
 | LLM calls | 1 | 4 |
 | retrieval passes | 1 | 3 |
 | latency | 7.6s | **43.5s** |
 | chunks in final context | 4 | 6 |
 | termination | `single_pass` | `no_new_evidence` |
+
+(The steps row read **8** until it was checked against the code. Step count is
+structural, not corpus-dependent: a `no_new_evidence` run that made 4 LLM calls stops
+after `Retrieve for gaps (pass 3)`, which is the 7th step. 8 steps happens only on the
+`max_iterations` path, and that one costs 5 calls — so *8 steps with 4 calls* was a
+combination this pipeline cannot produce. The full set, at `multi_pass_max_passes = 3`:
+`no_gaps_found` 3/2, early `no_new_evidence` 4/2, `gaps_closed` 6/4, late
+`no_new_evidence` 7/4, `max_iterations` 8/5, as steps/calls.)
 
 Nearly 6x the latency for two extra chunks of evidence. That ratio *is* the lesson,
 and it is why the learn page lists "interactive UIs" under when NOT to use this.
