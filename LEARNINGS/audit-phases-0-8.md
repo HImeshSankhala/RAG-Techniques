@@ -283,6 +283,22 @@ the Graph-vs-Standard retrieval/latency/groundedness table on both
 without the graph — the corpus facts, the bounds, the entity-resolution guards, the
 ungrounded-triple filter, the no-graph path — is verified above and correct.
 
+### Resolved after this audit
+
+`.graph.json` was built and the deferred Graph RAG items were checked. The finding is
+better than pass/fail: **the structural claims hold and the figures do not reproduce.**
+`raft.md#1` is inside the traversal and never in the top 4 — confirmed. The ball still
+covers a large majority of the corpus — confirmed. But the rebuild gave 291 nodes rather
+than 293, a 56-node ball rather than 53, 32 chunks rather than 35, and two of four top-4
+slots changed.
+
+Nothing drifted. Extraction is 43 sampled LLM calls, so the graph is not a function of
+the corpus the way the Chroma index is, and every graph-derived number is a property of
+one build. This is the only index in the project with that property. `phase-8-graph-rag.md`
+and `graph-rag.mdx` now state the figures with their provenance and rest the argument on
+the structure instead; the eval harness pins ball coverage as a threshold rather than a
+count, which is why `graph.traversal-ball` passes at 74% having been written against 81%.
+
 ---
 
 ## The one thing to fix first
