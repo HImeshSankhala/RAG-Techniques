@@ -170,7 +170,19 @@ class Metadata:                        # fixed fields — the compare diff row l
     llm_calls: int
     retrieval_passes: int
     tokens_in: int; tokens_out: int
-    termination_reason: str            # "single_pass" (no loop) | "no_gaps_found" | "gaps_closed" | "max_iterations" | ...
+    # Why the loop stopped. Every value any pipeline emits as of Phase 9 — grep
+    # `termination_reason=` and `reason =` under implementations/ + core/graph.py:
+    #   single_pass                         Standard, Fusion, Auto — there is no loop
+    #   no_gaps_found | gaps_closed         Multi-Pass: critique satisfied, 1st pass / later
+    #   agent_stopped                       Agentic: the planner replied ANSWER
+    #   repeated_action                     Agentic: planner re-asked a search it had run
+    #   no_new_evidence                     Multi-Pass, Agentic: search returned nothing new
+    #   max_iterations                      Multi-Pass, Agentic: the hard cap, the guarantee
+    #   no_entities_matched | max_hops |    Graph RAG traversal outcomes
+    #     node_budget | traversal_exhausted
+    #   no_graph                            Graph RAG: .graph.json has not been built
+    #   empty_index                         any pipeline: nothing is indexed
+    termination_reason: str
     groundedness: float                # fraction of retrieved sources cited (compliance proxy)
     cost_estimate_usd: float           # 0.0 on the local backend
 
@@ -294,7 +306,16 @@ Each phase ends demo-able. Do not start N+1 until N runs.
 - **Learning focus:** multi-hop questions where similarity search fails.
 
 ### Phase 9 — Agentic RAG
-- Plan → retrieve → assess loop with max iterations; steps trace shows agent reasoning
+- Plan → retrieve → (assess & re-plan) loop with max iterations; steps trace shows agent
+  reasoning
+- **Built with assess merged into the next plan call**, not as a third step. This section
+  originally specified `plan → retrieve → assess`. An assessment's only consumer is the
+  plan that follows it, so emitting a verdict and then re-supplying that verdict as input
+  to a separate planning call buys a call and nothing else. One LLM call per iteration:
+  iteration 1 is labelled `Plan` in the trace and every later one `Assess & re-plan`,
+  which is exactly what it does. The loop the reader sees is still three-beat; it is the
+  call count that differs. See `backend/implementations/agentic_rag.py` and
+  `LEARNINGS/phase-9-agentic-rag.md`.
 - **Learning focus:** stopping criteria; cost control in agent loops.
 
 ### Phase 10 — Interactive RAG
