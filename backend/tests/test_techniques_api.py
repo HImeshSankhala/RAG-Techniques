@@ -57,6 +57,7 @@ def test_implemented_flag_tracks_the_registry() -> None:
         "multi-pass-rag",
         "auto-rag",
         "graph-rag",
+        "agentic-rag",
     }
 
 
