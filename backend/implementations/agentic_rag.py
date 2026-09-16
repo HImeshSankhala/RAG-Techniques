@@ -106,9 +106,9 @@ ANSWER only when every part of the question is covered by a passage."""
 # little it buys. Asked to assess evidence covering only the first half of a
 # two-part question, the planner without it replied: empty 3/3 on one evidence
 # set, ANSWER 1/3 and a search for material it already had 2/3 on another. With
-# it, one run of three named the actual missing hop — the only time in 12 samples
-# anything did. It does not regress the opposite case: on evidence that genuinely
-# covers the question, both versions answer ANSWER 3/3.
+# it, one run of three named the actual missing hop — the only time in 9
+# thinking-on samples anything did. It does not regress the opposite case: on
+# evidence that genuinely covers the question, both versions answer ANSWER 3/3.
 #
 # So it is a small improvement to a step that is still wrong most of the time.
 # See LEARNINGS/phase-9-agentic-rag.md; the honest summary is that this loop's
