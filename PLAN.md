@@ -62,8 +62,36 @@ A full-stack learning website for 9 RAG techniques: **read** about each one, **t
 | Vector store | ChromaDB (embedded) | Zero infra; swappable later |
 | Graph (Graph RAG) | NetworkX in-memory | Start simple |
 | Feedback store | SQLite | Enough for feedback RAG |
-| Tests | pytest (engine) + basic API tests | Smoke tests per pipeline |
+| Tests | pytest (engine) + basic API tests; Vitest for frontend **pure logic only** | Smoke tests per pipeline; see "Testing scope" below |
 | Dev orchestration | Two dev servers + one `Makefile` | `make dev` runs both |
+
+### Testing scope
+
+The backend is tested broadly: every pipeline gets a pytest smoke test against
+`data/sample_docs`, and the API has its own tests.
+
+The frontend is tested **narrowly and on purpose**. A frontend test is in scope only
+when it covers a **pure function that decides what the reader is told** — the branch
+that picks a lesson, a formatter whose output is the claim, a derivation that turns
+API numbers into a sentence. TypeScript and eslint cannot catch a wrong branch: both
+sides of `if (overlap === 0)` typecheck, and only one of them is true. That is the gap
+these tests exist to close.
+
+Explicitly OUT of scope, and to be rejected in review:
+
+- Snapshot tests. They assert that markup did not change, which is not a claim about
+  correctness, and they are updated reflexively the moment they fail.
+- Render tests of components that only lay out props. Testing that a `<div>` contains
+  the string it was handed tests React.
+- E2E / browser tests. The cost is a CI service dependency and a flaky suite; the
+  benefit is covered by running the app.
+- Anything that requires mocking `fetch`. Mocking the network and then asserting on
+  the mock tests the mock. The typed client in `frontend/lib/api.ts` is fetch plumbing
+  and stays untested.
+
+The failure mode this scope guards against is a frontend suite that costs more to
+maintain than it catches. If a test does not answer "would this have caught the
+reader being told something false?", do not write it.
 
 ---
 
@@ -348,12 +376,16 @@ ONE phase at a time, in order, and stop for review after each.
 - Python 3.11+, full type hints; TS strict mode.
 - Conventional commits (feat:, fix:, docs:, refactor:, test:).
 - Every pipeline: pytest smoke test against data/sample_docs.
+- Frontend tests (Vitest) cover PURE LOGIC that decides what the reader is told —
+  branch selection, formatters, derivations. NOT snapshots, NOT render tests, NOT E2E,
+  NOT mocked fetch. See PLAN.md "Testing scope". Anything outside that is speculative
+  and should be deleted, not extended.
 - Keep costs low: local embeddings, small sample docs, small model for router calls.
 
 ## Commands
 - make dev      # backend :8000 + frontend :3000
 - make index    # ingest data/sample_docs into Chroma
-- make test     # pytest
+- make test     # pytest + frontend vitest
 - API docs at http://localhost:8000/docs
 
 ## Teaching mode (important)

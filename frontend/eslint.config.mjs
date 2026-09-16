@@ -15,7 +15,7 @@ export default defineConfig([
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
   ...tseslint.configs.recommended,
   {
-    files: ["**/*.{js,jsx,ts,tsx,mjs}"],
+    files: ["**/*.{js,jsx,ts,tsx,mjs,mts}"],
     plugins: { "@next/next": nextPlugin },
     rules: {
       ...nextPlugin.configs.recommended.rules,

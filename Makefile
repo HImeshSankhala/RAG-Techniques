@@ -1,4 +1,4 @@
-.PHONY: setup dev dev-backend dev-frontend index test lint
+.PHONY: setup dev dev-backend dev-frontend index test lint eval
 
 # Python 3.11+ required. Full path, not bare `python3.12`, because an Anaconda
 # install earlier on PATH would otherwise shadow the Homebrew one. Override with:
@@ -30,8 +30,18 @@ dev-frontend:
 index:
 	cd backend && .venv/bin/python -m core.index
 
+# Backend first: it is the slower and the more informative of the two, and a
+# frontend suite that runs in 250ms is not worth reordering for.
 test:
 	cd backend && .venv/bin/python -m pytest
+	cd frontend && npm test
+
+# Retrieval evaluation over the sample corpus. Deliberately NOT part of `make
+# test` and NOT in CI: it scores retrieval quality rather than asserting
+# correctness, so it is a number you read and argue with, not a gate that goes
+# red. Requires the index (`make index`).
+eval:
+	cd backend && .venv/bin/python -m evals.retrieval
 
 lint:
 	cd backend && .venv/bin/ruff check .
