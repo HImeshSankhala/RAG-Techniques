@@ -93,14 +93,31 @@ class Settings(BaseSettings):
     # (`reason=True`, see core/llm.py): Ollama draws thinking tokens from the same
     # num_predict budget as the reply, so a budget sized for the reply alone gets
     # eaten by the reasoning and the reply comes back EMPTY. Multi-Pass reads an
-    # empty critique as "no gaps" and silently stops looping — measured at 233 of
-    # 256 tokens, i.e. intermittently.
+    # empty critique as "no gaps" and stops looping; Agentic RAG reads an empty
+    # plan as unreadable and spends an iteration on a fallback search.
+    #
+    # Raised twice, both times by measurement. At 256 the critique went silent
+    # intermittently — 233 of 256 tokens. At 1024, over 30 live qwen3:8b calls per
+    # consumer (5 real prompts x 3 samples), every silent call stopped at exactly
+    # the cap with done_reason="length":
+    #
+    #   consumer               silent @1024   silent @2048   longest reply seen
+    #   Multi-Pass critique      2/15 (13%)      0/15            559 tokens
+    #   Agentic planner          2/15 (13%)      0/15           1244 tokens
+    #
+    # One setting, not two, because the two consumers measured the same: the same
+    # failure rate, and reply lengths sitting on top of each other (medians 344 and
+    # 350). Splitting would be two settings holding one number. 2048 leaves 1.6x
+    # headroom over the longest reply seen, and costs latency only on the tail —
+    # this is a ceiling, not a target, so the calls that stop at EOS are untouched,
+    # including the two `reason=False` consumers (Auto RAG's router, graph
+    # extraction) that never came near 1024.
     #
     # Separate from the Anthropic helper cap on purpose: that one is a spend
     # guardrail on a paid call, this one is free local generation and bounds
     # latency only. Reusing one constant for both is what turned a cost control
     # into a correctness bug.
-    ollama_helper_num_predict: int = 1024
+    ollama_helper_num_predict: int = 2048
 
     @field_validator("anthropic_model")
     @classmethod
