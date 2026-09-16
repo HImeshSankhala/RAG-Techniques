@@ -260,22 +260,63 @@ def _rrf_consensus_beats_conviction() -> str | None:
 
 
 def _rrf_k_sweep() -> str | None:
-    """The off-by-three correction in phase 4: membership, not pairwise order.
+    """Phase 4's k sweep: both bands, and the tie that separates them.
 
-    Only the membership boundary is pinned. The pairwise flip the inequality
-    predicts lands on an exact tie at k = 3 (both chunks score 1/4), where the
-    order is decided by sort stability rather than by arithmetic — too fragile to
-    assert, and not the lesson anyway. The lesson is that the chunk in *fourth*
-    place decides membership, and that boundary is three steps further out.
+    An earlier version of this pinned only the *membership* boundary, on the
+    reasoning that the pairwise flip sits on an exact tie and is therefore too
+    fragile to assert. That was the same mistake the section is about — arguing
+    from the arithmetic instead of running the sweep — and it left the harness
+    green while both docs printed the flip one step late. The fragile claim is
+    exactly where an error hides, so it is pinned now.
+
+    Three things are asserted:
+
+    * membership: bigtable.md#0 is in the fused top 4 for k <= 6, gone from k = 7
+    * ordering: it outranks cassandra.md#0 for k = 0..2 and is below it from k = 3
+    * the tie at k = 3: both chunks score exactly 1/4, which is *why* the flip is
+      one step earlier than `2/(k+5) > 1/(k+1)` predicts. That inequality is
+      strict, so it says nothing at its own boundary; what resolves the order
+      there is `sorted()` being stable over a dict the dense list populated first.
+
+    The tie is pinned as exact equality of the two fused scores rather than as
+    "cassandra wins the tie-break". The equality is a fact about RRF; who wins it
+    is a fact about CPython's sort being stable and about the order
+    `core/fusion.py` happens to merge its inputs. Pinning the second would make
+    this harness enforce an implementation detail the docs explicitly say is not
+    a property of the algorithm.
     """
     query = "reversed hostnames"
     lists = [list(dense(query, CANDIDATES)), list(sparse(query, CANDIDATES))]
+    d, s = ids(lists[0]), ids(lists[1])
+
+    def ranking(k: int) -> list[str]:
+        """The whole merged order, not the top 4 — ordering outlives the window."""
+        return ids(reciprocal_rank_fusion(lists, len(d) + len(s), k))
+
     present = [
         k for k in range(0, 16) if "bigtable.md#0" in ids(reciprocal_rank_fusion(lists, TOP_K, k))
     ]
-    d, s = ids(lists[0]), ids(lists[1])
+    above = [
+        k
+        for k in range(0, 16)
+        if ranking(k).index("bigtable.md#0") < ranking(k).index("cassandra.md#0")
+    ]
+
+    scores = {c.chunk_id: c.score for c in reciprocal_rank_fusion(lists, len(d) + len(s), 3)}
+
     return _problems(
         _expect("k values keeping bigtable.md#0 in the fused top 4", present, list(range(0, 7))),
+        _expect("k values ranking bigtable.md#0 above cassandra.md#0", above, [0, 1, 2]),
+        _expect(
+            "the two scores at k = 3",
+            (scores["bigtable.md#0"], scores["cassandra.md#0"]),
+            (0.25, 0.25),
+        ),
+        _expect(
+            "cassandra.md#0 in the top 4 at k = 0",
+            "cassandra.md#0" in ids(reciprocal_rank_fusion(lists, TOP_K, 0)),
+            False,
+        ),
         _expect("the chunk that evicts it", ids(fused(query))[-2], "cassandra.md#3"),
         _expect("dense rank of cassandra.md#3", d.index("cassandra.md#3") + 1, 9),
         _expect("BM25 rank of cassandra.md#3", s.index("cassandra.md#3") + 1, 8),
@@ -587,8 +628,9 @@ CLAIMS: list[Claim] = [
         claim_id="fusion.rrf-k-sweep",
         where="LEARNINGS/phase-4-fusion-rag.md — 'Where RRF itself fails', the corrected sweep "
         "(published as a code block in frontend/content/fusion-rag.mdx too)",
-        says="bigtable.md#0 stays in the fused top 4 for k <= 6 and is gone from k = 7, evicted "
-        "by cassandra.md#3 at dense #9 / BM25 #8",
+        says="bigtable.md#0 outranks cassandra.md#0 for k = 0..2 and is below it from k = 3 (an "
+        "exact tie at 1/4 each), stays in the fused top 4 for k <= 6, and is gone from k = 7, "
+        "evicted by cassandra.md#3 at dense #9 / BM25 #8",
         corpus_specific=True,
         check=_rrf_k_sweep,
     ),
