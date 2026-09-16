@@ -180,12 +180,23 @@ posture.
 
 ## What is verified, and what isn't
 
-**Verified:** Standard RAG answers correctly on `qwen3:8b` with no API key set —
-grounded, cited, `groundedness=1.0`, `cost_estimate_usd=0.0`, ~15s end to end. Opus and
-Sonnet are refused at the config layer, the router, and the HTTP boundary. `/api/models`
-reports the paid model as unavailable with the reason. `/api/usage` returns zeros.
-41 tests pass.
+**Verified, and still true:** Standard RAG answers correctly on `qwen3:8b` with no API
+key set — grounded, cited, `groundedness=1.0`, `cost_estimate_usd=0.0`, ~15s end to end.
+Opus and Sonnet are refused at the config layer, the router, and the HTTP boundary.
 
-**Not verified:** a real Haiku call. No key is configured, so the paid path — output
-capping, the spend meter incrementing, `/api/usage` rising — has been exercised only
-through tests and stubs, never against the live API.
+**What this section said at the time, and what it says now.** Four of its numbers were
+facts about a machine with no key on it, and all four have moved. Re-measured 2026-09-16
+against the live backend on `:8000`:
+
+| Claim as written | Measured now | Command |
+|---|---|---|
+| `/api/models` reports the paid model **unavailable** with the reason | `claude-haiku-4-5`, `available: true`, note `"Paid. Output capped at 512 tokens."` | `curl -s localhost:8000/api/models` |
+| `/api/usage` returns **zeros** | `calls: 3`, `input_tokens: 3476`, `output_tokens: 481`, `spend_estimate_usd: 0.005881` | `curl -s localhost:8000/api/usage` |
+| **41 tests** pass | **203 passed**, 0 skipped | `cd backend && .venv/bin/python -m pytest -q` |
+| **Not verified:** a real Haiku call — the paid path exercised only through tests and stubs | Exercised for real. Those 3 calls are live, and `LEARNINGS/phase-5-compare.md` tabulates a Haiku run beside the local one (7.7s, $0.0015, identical evidence) | — |
+
+$0.005881 is **0.12%** of the $5 ceiling, which is the one number here worth watching
+rather than archiving. The guardrails this update installed did not change; what changed
+is that the paid path stopped being theoretical. Note the shape of the staleness: none of
+these sentences was wrong when written. They were environment readings recorded in
+present tense, which is the form of claim that expires without anybody editing anything.

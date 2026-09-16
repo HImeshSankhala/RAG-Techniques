@@ -170,7 +170,19 @@ class Metadata:                        # fixed fields — the compare diff row l
     llm_calls: int
     retrieval_passes: int
     tokens_in: int; tokens_out: int
-    termination_reason: str            # "single_pass" (no loop) | "no_gaps_found" | "gaps_closed" | "max_iterations" | ...
+    # Why the loop stopped. Every value any pipeline emits as of Phase 9 — grep
+    # `termination_reason=` and `reason =` under implementations/ + core/graph.py:
+    #   single_pass                         Standard, Fusion, Auto — there is no loop
+    #   no_gaps_found | gaps_closed         Multi-Pass: critique satisfied, 1st pass / later
+    #   agent_stopped                       Agentic: the planner replied ANSWER
+    #   repeated_action                     Agentic: planner re-asked a search it had run
+    #   no_new_evidence                     Multi-Pass, Agentic: search returned nothing new
+    #   max_iterations                      Multi-Pass, Agentic: the hard cap, the guarantee
+    #   no_entities_matched | max_hops |    Graph RAG traversal outcomes
+    #     node_budget | traversal_exhausted
+    #   no_graph                            Graph RAG: .graph.json has not been built
+    #   empty_index                         any pipeline: nothing is indexed
+    termination_reason: str
     groundedness: float                # fraction of retrieved sources cited (compliance proxy)
     cost_estimate_usd: float           # 0.0 on the local backend
 
@@ -233,9 +245,13 @@ accidentally burn money.
    backend refuse further paid calls once exceeded in a run, so a stuck loop during
    development can't quietly rack up calls. Local (Ollama) is never capped — it's free.
 
-Budget reality check: Haiku is ~$0.004 per single-call query, so $5 is roughly 400–1000+
-queries even with Multi-Pass. The danger isn't normal use — it's an accident (a loop, or a
-wrong model). The guardrails above remove those accidents.
+Budget reality check: a single-call Haiku query costs **~$0.002 measured, ~$0.004 worst
+case** — the spread is the `max_tokens_answer` cap, since input is ~1200 tokens either way
+and output is billed 5x. The worst case is an answer that runs to the full 512-token cap;
+the measured figure is `.usage.json` after 3 real calls (3476 in / 481 out = $0.005881,
+$0.00196 each). So $5 is roughly 400–1000+ queries even with Multi-Pass, and that range is
+computed from the worst case on purpose. The danger isn't normal use — it's an accident (a
+loop, or a wrong model). The guardrails above remove those accidents.
 
 ---
 
@@ -294,7 +310,16 @@ Each phase ends demo-able. Do not start N+1 until N runs.
 - **Learning focus:** multi-hop questions where similarity search fails.
 
 ### Phase 9 — Agentic RAG
-- Plan → retrieve → assess loop with max iterations; steps trace shows agent reasoning
+- Plan → retrieve → (assess & re-plan) loop with max iterations; steps trace shows agent
+  reasoning
+- **Built with assess merged into the next plan call**, not as a third step. This section
+  originally specified `plan → retrieve → assess`. An assessment's only consumer is the
+  plan that follows it, so emitting a verdict and then re-supplying that verdict as input
+  to a separate planning call buys a call and nothing else. One LLM call per iteration:
+  iteration 1 is labelled `Plan` in the trace and every later one `Assess & re-plan`,
+  which is exactly what it does. The loop the reader sees is still three-beat; it is the
+  call count that differs. See `backend/implementations/agentic_rag.py` and
+  `LEARNINGS/phase-9-agentic-rag.md`.
 - **Learning focus:** stopping criteria; cost control in agent loops.
 
 ### Phase 10 — Interactive RAG
@@ -326,12 +351,46 @@ Building it also demonstrates engineering a fixed corpus never does — multipar
 per-session collection isolation, async re-indexing, TTL cleanup.
 
 **Why it is NOT the default, and the risk that makes this a real decision:** the demo
-corpus is deliberately rigged so techniques visibly diverge — `memtable` is a term dense
-retrieval ranks badly and BM25 nails (Fusion wins), and Cassandra's lineage is stated
-across two files (Graph RAG multi-hop wins). An arbitrary uploaded PDF usually has none
-of those properties. Someone uploads a 3-page résumé, all nine techniques return the same
-chunk and the same answer, and the reviewer concludes the techniques don't matter. **A
-badly-scoped version of this feature actively undermines the project's thesis.**
+corpus is deliberately rigged so techniques visibly diverge. An arbitrary uploaded PDF
+usually has none of those properties. Someone uploads a 3-page résumé, all nine
+techniques return the same chunk and the same answer, and the reviewer concludes the
+techniques don't matter. **A badly-scoped version of this feature actively undermines
+the project's thesis.**
+
+**The two examples this argument used to cite are dead.** It named `memtable` (a term
+dense retrieval ranks badly and BM25 nails — Fusion wins) and Cassandra's lineage
+(stated across two files — Graph RAG multi-hop wins). The corpus expansion to 9
+documents / 43 chunks destroyed both, and this section was not updated for two phases:
+
+- `What is a memtable?` — dense's **top** hit is `bigtable.md#2`, and that chunk now
+  *contains* the definition (`## Storage: SSTables and the memtable`). BM25 puts it
+  second. Nothing diverges.
+- Cassandra's lineage is now stated whole, in a single sentence, in **four** chunks —
+  `cassandra.md#0`, `cassandra.md#4`, `bigtable.md#3`, `dynamo.md#4`. `bigtable.md#3`
+  says it outright: Cassandra combines Bigtable's column-family data model with the
+  replication approach of Dynamo. One hop answers it.
+
+**Live replacements, measured against the 43-chunk index:**
+
+- *Fusion / keyword wins:* `reversed hostnames`. BM25's top-4 is
+  `bigtable.md#0, #1, #2, #3` — 4 of 4 gold. Dense's top-4 is
+  `dynamo.md#3, raft.md#2, raft.md#3, chubby.md#2` — zero Bigtable. Total divergence,
+  not a reordering.
+- *Graph RAG multi-hop:* "What replaced ZooKeeper in newer Kafka, and what was that
+  protocol designed to be easier than?" `KRaft` appears in exactly one chunk of 43
+  (`kafka.md#4`), **no chunk contains both `Kafka` and `Paxos`**, and dense's top-4
+  (`kafka.md#4, chubby.md#4, kafka.md#1, kafka.md#0`) contains none of the three chunks
+  that say Raft was designed to be more understandable than Paxos. Caveat, stated
+  because it weakens the example: BM25 alone lands `raft.md#1` at rank 2, so this is a
+  clean *dense* failure and only a partial graph-only win.
+
+**What the expiry does to the decision — the owner's call, not this document's.** The
+risk side is unchanged, and arguably sharpened: a corpus rigged on purpose stopped being
+rigged after a routine content edit, with no test and no reader noticing. That is direct
+evidence for how fragile "the techniques visibly diverge" is on prose nobody curated for
+divergence — and an upload path has no curator at all. The upside side is untouched; it
+never rested on these two examples. What is genuinely gone is the comfort that the
+curated corpus keeps its properties for free.
 
 **If built, it is additive, never a replacement.** The curated corpus stays the default
 and the demo path. Upload is a labelled second mode: "compare on the demo corpus to see
