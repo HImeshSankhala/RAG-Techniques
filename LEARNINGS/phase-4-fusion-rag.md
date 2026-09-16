@@ -87,10 +87,17 @@ confirms this directly: "at `k ≤ 3` the correct chunk is back in the merged to
 Sweeping `k` over the real candidate lists (12 per retriever):
 
 ```
-k = 0…3   bigtable.md#0 in the fused top 4, ranked above cassandra.md#0
-k = 4…6   bigtable.md#0 still in the top 4, now ranked below cassandra.md#0
+k = 0…2   bigtable.md#0 in the fused top 4, ranked above cassandra.md#0
+          (at k = 0 cassandra.md#0 is not in the top 4 at all)
+k = 3…6   bigtable.md#0 still in the top 4, now ranked below cassandra.md#0
 k ≥ 7     bigtable.md#0 gone
 ```
+
+The pairwise flip lands at `k = 3`, not `k = 4`, because `k > 3` is *strict* and `k = 3` is
+an exact tie at `1/4` each. RRF defines no tie-break, so the order there is settled by
+`sorted()` being stable and the dense list being merged first — an implementation detail of
+`core/fusion.py`, not a property of the algorithm. The inequality's own boundary is the one
+value of `k` it cannot answer for.
 
 The inequality is arithmetically right and answers the wrong question. `2/(k+5) > 1/(k+1)`
 governs the **pairwise order** of two chunks; what the pipeline consumes is **membership in

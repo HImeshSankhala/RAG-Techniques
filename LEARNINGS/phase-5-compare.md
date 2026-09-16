@@ -141,8 +141,11 @@ steps are entirely different work — `Embed query / Retrieve chunks / Generate`
 `Retrieve (dense + BM25) / Fuse by reciprocal rank / Generate`.
 
 The count is only meaningful once a technique with a genuinely different shape exists.
-Multi-Pass (Phase 6) will record nine, and *that* is when the number starts carrying
-information. Until then the step *names* in the two traces say more than the delta does,
+Multi-Pass (Phase 6) records anywhere from three to eight depending on where its loop
+stops — eight is the structural maximum, on the `max_iterations` path — and *that* is
+when the number starts carrying information. (Written before Phase 6 existed, this said
+"nine". The prediction was one step over: the loop makes no critique call after its
+final redraft, because nothing could act on the answer.) Until then the step *names* in the two traces say more than the delta does,
 which is why both traces render in full rather than being collapsed into a number.
 
 ## What "done" means here

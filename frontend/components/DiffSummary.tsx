@@ -19,10 +19,7 @@ export function DiffSummary({
   a: RunResponse;
   b: RunResponse;
 }) {
-  // Nothing retrieved on either side is not "they disagreed completely" — it is
-  // an unbuilt index. The overlap arithmetic gives 0% for both, so the two cases
-  // have to be told apart here rather than from the number.
-  const noEvidence = a.retrieved_chunks.length === 0 && b.retrieved_chunks.length === 0;
+  const empty = emptySideCount(a, b);
 
   return (
     <section className="rounded-lg border border-slate-200 p-5 dark:border-slate-800">
@@ -30,18 +27,25 @@ export function DiffSummary({
         What differed
       </h2>
 
-      <p className="mt-3 text-sm leading-relaxed">{summarise(diff, a, b, noEvidence)}</p>
+      <p className="mt-3 text-sm leading-relaxed">{summarise(diff, a, b, empty)}</p>
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+        {/* A percentage needs both sides to have retrieved something. The server
+            divides by the LARGER side, so one empty side pins this at 0% — a
+            number that looks like total disagreement and actually means "there
+            was nothing to agree with". Either empty case shows an em dash
+            instead, and neither is highlighted: nothing diverged. */}
         <Metric
           label="Evidence overlap"
-          value={noEvidence ? "—" : `${diff.chunk_overlap_pct}%`}
+          value={empty > 0 ? "—" : `${diff.chunk_overlap_pct}%`}
           detail={
-            noEvidence
+            empty === 2
               ? "nothing retrieved"
-              : `${diff.chunk_overlap} shared chunk${diff.chunk_overlap === 1 ? "" : "s"}`
+              : empty === 1
+                ? "one side retrieved nothing"
+                : `${diff.chunk_overlap} shared chunk${diff.chunk_overlap === 1 ? "" : "s"}`
           }
-          tone={!noEvidence && diff.chunk_overlap_pct < 100 ? "notable" : "neutral"}
+          tone={empty === 0 && diff.chunk_overlap_pct < 100 ? "notable" : "neutral"}
         />
         <Metric
           label="Latency"
@@ -84,6 +88,46 @@ export function DiffSummary({
 }
 
 /**
+ * Every pipeline's own name for "the collection was empty". Anything else on a
+ * side that retrieved nothing means the index may be perfectly fine and *this
+ * technique* could not run — a missing knowledge graph, say.
+ *
+ * Reading the reason the backend already reports is what keeps this file from
+ * having to know which technique needs which setup step. The frontend knows
+ * "the index is the problem" vs "it isn't"; the pipeline that knows why puts the
+ * actual remedy in its own answer, which renders below.
+ */
+const EMPTY_INDEX = "empty_index";
+
+/**
+ * How many of the two sides retrieved nothing: 0, 1 or 2.
+ *
+ * This used to be a boolean `a.length === 0 && b.length === 0`, and that `&&`
+ * was a bug. It collapsed "one side produced no evidence" into the same bucket
+ * as "both sides retrieved fine", so a side that never ran was then described by
+ * the overlap-0 branch as a side that had *disagreed*. Three situations, three
+ * different truths — so the count, not a boolean.
+ *
+ * Exported because the sentence and the Evidence-overlap tile must agree about
+ * it; the failure mode is those two telling different stories about one run.
+ */
+export function emptySideCount(a: RunResponse, b: RunResponse): number {
+  return [a, b].filter((side) => side.retrieved_chunks.length === 0).length;
+}
+
+/** The pipelines' own words for why nothing came back, deduped. "" if they said nothing. */
+function reasons(sides: RunResponse[]): string {
+  const given = sides.map((side) => side.metadata.termination_reason).filter(Boolean);
+  return [...new Set(given)].join(", ");
+}
+
+/** ` (no_graph)`, or nothing at all when no side gave a reason. */
+function reasonNote(sides: RunResponse[]): string {
+  const note = reasons(sides);
+  return note ? ` (${note})` : "";
+}
+
+/**
  * A sentence naming what actually varied.
  *
  * Written per case rather than as one generic template: "they retrieved
@@ -91,11 +135,11 @@ export function DiffSummary({
  * differed" are different lessons, and a reader should not have to infer which
  * one they are looking at from four numbers.
  */
-function summarise(
+export function summarise(
   diff: ComparisonDiff,
   a: RunResponse,
   b: RunResponse,
-  noEvidence: boolean,
+  empty: number,
 ): string {
   const axis = diff.same_technique
     ? diff.same_model
@@ -105,8 +149,21 @@ function summarise(
       ? `Different techniques on the same model (${a.technique} vs ${b.technique})`
       : `Different techniques and different models (${a.technique}/${a.metadata.model} vs ${b.technique}/${b.metadata.model})`;
 
-  if (noEvidence) {
-    return `${axis}, but neither side retrieved anything — the index is empty. Run \`make index\`, then compare again.`;
+  // Both empty. Only the pipelines can say whether the index is why — every one
+  // of them reports `empty_index` from its own no-chunks branch, so if neither
+  // said that, `make index` is the wrong advice and the corpus is probably fine.
+  if (empty === 2) {
+    return [a, b].every((side) => side.metadata.termination_reason === EMPTY_INDEX)
+      ? `${axis}, but neither side retrieved anything — the index is empty. Run \`make index\`, then compare again.`
+      : `${axis}, but neither side could run${reasonNote([a, b])}, so there is nothing to compare. The index is not what stopped them — each answer below says what it still needs.`;
+  }
+
+  // Exactly one empty. This is NOT a retrieval disagreement, and calling it one
+  // is the most damaging thing this row can say: it reads as a real finding.
+  if (empty === 1) {
+    const [silent, other] = a.retrieved_chunks.length === 0 ? [a, b] : [b, a];
+    const label = silent === a ? "A" : "B";
+    return `${axis}. ${label} (${silent.technique}) retrieved nothing at all${reasonNote([silent])}, so there is no evidence disagreement here to read — only ${label === "A" ? "B" : "A"} (${other.technique}) retrieved anything. ${label}'s answer below says what it needs.`;
   }
 
   if (diff.chunk_overlap_pct === 100) {
@@ -167,7 +224,7 @@ function Metric({
   );
 }
 
-function formatDelta(value: number, unit: string, humanise = false): string {
+export function formatDelta(value: number, unit: string, humanise = false): string {
   if (value === 0) return "same";
   const sign = value > 0 ? "+" : "−";
   const magnitude = Math.abs(value);
