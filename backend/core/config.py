@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     # inside the pipeline that happens to use it.
     multi_pass_max_passes: int = 3
 
+    # Agentic RAG (Phase 9) loops until its own planner says it has enough, and
+    # the planner is the same small model that cannot reliably tell Multi-Pass's
+    # critique it is done. Same reasoning as above, one iteration costing more:
+    # an agent iteration is a planner call plus a retrieval, and the evidence it
+    # carries into the next prompt grows every time. Kept at 3 so the worst-case
+    # context is the arithmetic done in implementations/agentic_rag.py.
+    agentic_max_iterations: int = 3
+
     # Haiku 4.5 list price, USD per million tokens. Used for the local estimate
     # in .usage.json — the Console spend limit is the real cap.
     anthropic_input_usd_per_mtok: float = 1.00
