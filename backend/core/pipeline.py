@@ -70,6 +70,13 @@ class Metadata:
     # Estimated USD for paid backends; 0.0 on local.
     cost_estimate_usd: float = 0.0
 
+    # How many stored votes this run's ranking was built from (Feedback RAG only;
+    # every other technique leaves it 0). It is in the fixed field set because the
+    # compare view has to be able to say WHY two runs differed: a feedback-reranked
+    # side is not a function of its query alone, and a diff row that cannot see
+    # that would report accumulated history as a retrieval disagreement.
+    feedback_votes: int = 0
+
 
 @dataclass
 class RAGResult:
