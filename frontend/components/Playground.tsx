@@ -2,9 +2,11 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { DraftReview } from "@/components/DraftReview";
 import { ResultPanel } from "@/components/ResultPanel";
 import {
   ApiError,
+  finalizeDraft,
   getUsage,
   runTechnique,
   type ModelInfo,
@@ -40,6 +42,8 @@ export function Playground({
   const [query, setQuery] = useState(PRESET_QUERIES[0]);
 
   const [result, setResult] = useState<RunResponse | null>(null);
+  // Interactive RAG only: the answer after the human reviewed `result` (the draft).
+  const [final, setFinal] = useState<RunResponse | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -59,12 +63,32 @@ export function Playground({
     setIsRunning(true);
     setError(null);
     setResult(null);
+    setFinal(null);
 
     try {
       setResult(await runTechnique(technique, query.trim(), model || undefined));
     } catch (cause) {
       setError(
         cause instanceof ApiError ? cause : new ApiError("Unexpected error running query.", 0),
+      );
+    } finally {
+      setIsRunning(false);
+      getUsage().then(setUsage).catch(() => {});
+    }
+  }
+
+  async function handleFinalize(chunkIds: string[], hint: string) {
+    if (!result?.draft_id || isRunning) return;
+
+    setIsRunning(true);
+    setError(null);
+    setFinal(null);
+
+    try {
+      setFinal(await finalizeDraft(result.draft_id, chunkIds, hint));
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError ? cause : new ApiError("Unexpected error finalizing.", 0),
       );
     } finally {
       setIsRunning(false);
@@ -82,7 +106,13 @@ export function Playground({
             </span>
             <select
               value={technique}
-              onChange={(e) => setTechnique(e.target.value)}
+              onChange={(e) => {
+                // A draft belongs to the technique that made it; leaving it on
+                // screen under another technique would offer to finalize it there.
+                setTechnique(e.target.value);
+                setResult(null);
+                setFinal(null);
+              }}
               className="mt-1 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm dark:border-slate-700"
             >
               {techniques.map((t) => (
@@ -173,11 +203,33 @@ export function Playground({
 
       {result && (
         <section className="rounded-lg border border-slate-200 p-5 dark:border-slate-800">
+          {result.draft_id && <PanelHeading>Draft</PanelHeading>}
           <ResultPanel result={result} />
+        </section>
+      )}
+
+      {/* The draft stays on screen above the final: comparing the two is the lesson. */}
+      {result?.draft_id && (
+        <DraftReview
+          key={result.draft_id}
+          draft={result}
+          isRunning={isRunning}
+          onSubmit={handleFinalize}
+        />
+      )}
+
+      {final && (
+        <section className="rounded-lg border border-slate-200 p-5 dark:border-slate-800">
+          <PanelHeading>Final</PanelHeading>
+          <ResultPanel result={final} />
         </section>
       )}
     </div>
   );
+}
+
+function PanelHeading({ children }: { children: React.ReactNode }) {
+  return <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide">{children}</h2>;
 }
 
 /**

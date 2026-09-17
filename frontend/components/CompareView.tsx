@@ -59,7 +59,7 @@ export function CompareView({
   techniques: Technique[];
   models: ModelInfo[];
 }) {
-  const runnable = techniques.filter((t) => t.implemented);
+  const runnable = techniques.filter((t) => t.implemented && !t.needs_human);
   const defaultModel = models.find((m) => m.is_default)?.id ?? models[0]?.id ?? "";
 
   const [query, setQuery] = useState(PRESETS[0].query);
@@ -259,9 +259,11 @@ function SidePicker({
             className="mt-1 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm dark:border-slate-700"
           >
             {techniques.map((t) => (
-              <option key={t.name} value={t.name} disabled={!t.implemented}>
+              // A technique that pauses for a person has no honest unattended
+              // result, so it is listed but cannot be picked (the API 409s too).
+              <option key={t.name} value={t.name} disabled={!t.implemented || t.needs_human}>
                 {t.display_name}
-                {t.implemented ? "" : " — not built yet"}
+                {!t.implemented ? " — not built yet" : t.needs_human ? " — needs a human" : ""}
               </option>
             ))}
           </select>
