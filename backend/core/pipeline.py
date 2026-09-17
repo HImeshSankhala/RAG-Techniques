@@ -80,6 +80,13 @@ class RAGResult:
     steps: list[Step] = field(default_factory=list)
     metadata: Metadata = field(default_factory=Metadata)
 
+    # Set only by a run that pauses for a human (Interactive RAG's draft): the
+    # handle the second request resumes it with. Every other technique finishes
+    # in one call and leaves it None. One nullable field rather than a second
+    # pipeline interface, so /api/run and /api/compare keep calling `run()` on
+    # every technique alike.
+    draft_id: str | None = None
+
 
 class StepRecorder:
     """Times pipeline stages and collects them into `RAGResult.steps`.

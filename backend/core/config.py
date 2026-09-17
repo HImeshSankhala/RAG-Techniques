@@ -119,6 +119,13 @@ class Settings(BaseSettings):
     # into a correctness bug.
     ollama_helper_num_predict: int = 2048
 
+    # --- Storage -----------------------------------------------------------
+    # One SQLite file for runtime state that must outlive a request: Interactive
+    # RAG's drafts (Phase 10), and Feedback RAG's ratings (Phase 11). A field
+    # rather than a property like `usage_file` because tests point it at a temp
+    # file, and pydantic refuses assignment to a property with no setter.
+    db_path: Path = BACKEND_ROOT / "rag_lab.db"
+
     @field_validator("anthropic_model")
     @classmethod
     def _reject_non_haiku(cls, value: str) -> str:
