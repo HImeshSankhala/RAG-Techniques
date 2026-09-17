@@ -27,7 +27,7 @@ def test_techniques_match_the_contract() -> None:
     body = client.get("/api/techniques").json()
 
     for entry in body:
-        assert set(entry) == {"name", "display_name", "tagline", "implemented"}
+        assert set(entry) == {"name", "display_name", "tagline", "implemented", "needs_human"}
         assert entry["name"] and entry["display_name"] and entry["tagline"]
         assert isinstance(entry["implemented"], bool)
 
@@ -58,7 +58,14 @@ def test_implemented_flag_tracks_the_registry() -> None:
         "auto-rag",
         "graph-rag",
         "agentic-rag",
+        "interactive-rag",
     }
+
+
+def test_only_interactive_rag_needs_a_human() -> None:
+    """The compare view excludes exactly the techniques flagged here."""
+    body = client.get("/api/techniques").json()
+    assert {entry["name"] for entry in body if entry["needs_human"]} == {"interactive-rag"}
 
 
 def test_run_rejects_an_unknown_technique() -> None:

@@ -8,12 +8,13 @@ comparable against all the others for free.
 
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from api.routes.run import run_technique
 from core import llm
 from core.config import settings
 from core.llm import LLMError
+from implementations.registry import needs_human
 from api.schemas import (
     CompareRequest,
     CompareResponse,
@@ -28,6 +29,17 @@ router = APIRouter(prefix="/api", tags=["compare"])
 
 @router.post("/compare", response_model=CompareResponse)
 def compare(request: CompareRequest) -> CompareResponse:
+    # Checked before either side runs, so a rejected comparison spends nothing.
+    # A technique that pauses for a person has no honest unattended result: its
+    # side would be a draft, or a human stubbed out — both would misreport it.
+    for side in (request.a, request.b):
+        if needs_human(side.technique):
+            raise HTTPException(
+                status_code=409,
+                detail=f"'{side.technique}' needs a human mid-run, so it cannot be "
+                "compared. Try it in the playground.",
+            )
+
     # Reuse the /api/run handler rather than calling pipelines directly, so both
     # endpoints resolve techniques and map errors to status codes identically.
     # A 404/409/503/429 from either side surfaces unchanged.

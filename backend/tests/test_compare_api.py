@@ -121,3 +121,20 @@ def test_rejects_a_whitespace_only_query() -> None:
         compare("   ", {"technique": "standard-rag"}, {"technique": "fusion-rag"}).status_code
         == 422
     )
+
+
+def test_a_technique_that_needs_a_human_cannot_be_compared(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Interactive RAG has no honest unattended result, so compare refuses it
+    before either side runs — no LLM call, no orphan draft."""
+    calls: list[str] = []
+    monkeypatch.setattr(llm, "generate", lambda *args, **kwargs: calls.append("call"))
+
+    response = compare(
+        "What is hinted handoff?",
+        {"technique": "standard-rag"},
+        {"technique": "interactive-rag"},
+    )
+
+    assert response.status_code == 409
+    assert "needs a human" in response.json()["detail"]
+    assert calls == []

@@ -13,6 +13,7 @@ from implementations.agentic_rag import AgenticRAG
 from implementations.auto_rag import AutoRAG
 from implementations.fusion_rag import FusionRAG
 from implementations.graph_rag import GraphRAG
+from implementations.interactive_rag import InteractiveRAG
 from implementations.multi_pass_rag import MultiPassRAG
 from implementations.standard_rag import StandardRAG
 
@@ -25,6 +26,7 @@ PIPELINES: dict[str, RAGPipeline] = {
     AutoRAG.name: AutoRAG(),
     GraphRAG.name: GraphRAG(),
     AgenticRAG.name: AgenticRAG(),
+    InteractiveRAG.name: InteractiveRAG(),
 }
 
 
@@ -95,6 +97,18 @@ def list_techniques() -> list[tuple[TechniqueInfo, bool]]:
     is an engine question.
     """
     return [(t, t.name in PIPELINES) for t in CATALOG]
+
+
+def needs_human(name: str) -> bool:
+    """Whether the technique pauses mid-run for a person, so cannot run unattended.
+
+    Derived from the pipeline's type rather than declared as a flag on
+    `RAGPipeline`: one technique has this property, and a second "special
+    technique" attribute on the engine contract is not worth one member. The
+    compare view excludes these — a side whose human is stubbed out would be a
+    demo that lies about what the technique does.
+    """
+    return isinstance(PIPELINES.get(name), InteractiveRAG)
 
 
 def get_pipeline(name: str) -> RAGPipeline | None:
