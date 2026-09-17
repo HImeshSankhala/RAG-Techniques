@@ -42,6 +42,7 @@ function run(overrides: Partial<RunResponse> = {}): RunResponse {
       termination_reason: "single_pass",
       groundedness: 1,
       cost_estimate_usd: 0,
+      feedback_votes: 0,
       ...overrides.metadata,
     },
   };
@@ -315,6 +316,55 @@ describe("summarise — branch boundaries", () => {
     expect(summarise(diff({ chunk_overlap_pct: 100 }), empty, run(), 1)).toContain(
       "retrieved nothing at all",
     );
+  });
+});
+
+// --- the feedback caveat ---------------------------------------------------
+
+describe("summarise — a side reranked by stored votes", () => {
+  /** Feedback RAG, having applied `feedback_votes` stored votes to its ranking. */
+  function voted(votes: number): RunResponse {
+    const base = run({ technique: "feedback-rag" });
+    return { ...base, metadata: { ...base.metadata, feedback_votes: votes } };
+  }
+
+  it("says nothing extra when neither side used stored votes", () => {
+    const sentence = summarise(diff({ same_technique: false }), run(), run(), 0);
+
+    expect(sentence).not.toContain("stored vote");
+    expect(sentence).not.toContain("feedback history");
+  });
+
+  it("warns that the result depends on history when a side applied votes", () => {
+    // Without this clause the row says "they retrieved different evidence",
+    // which reads as a disagreement about THIS query. It is not: one side is
+    // carrying judgments cast on earlier ones.
+    const sentence = summarise(
+      diff({ chunk_overlap: 1, chunk_overlap_pct: 25, same_technique: false }),
+      run(),
+      voted(6),
+      0,
+    );
+
+    expect(sentence).toContain("B (feedback-rag) applied 6 stored votes");
+    expect(sentence).toContain("feedback history");
+  });
+
+  it("names both sides when both applied votes, and keeps the singular honest", () => {
+    const sentence = summarise(diff(), voted(1), voted(3), 0);
+
+    expect(sentence).toContain("A (feedback-rag) applied 1 stored vote");
+    expect(sentence).not.toContain("applied 1 stored votes");
+    expect(sentence).toContain("B (feedback-rag) applied 3 stored votes");
+  });
+
+  it("keeps the caveat even when the two sides retrieved identical evidence", () => {
+    // The most misleading case: 100% overlap reads as "feedback changed
+    // nothing", when it may only mean the votes have not moved anything YET.
+    const sentence = summarise(diff({ same_technique: false }), run(), voted(2), 0);
+
+    expect(sentence).toContain("identical evidence");
+    expect(sentence).toContain("applied 2 stored votes");
   });
 });
 

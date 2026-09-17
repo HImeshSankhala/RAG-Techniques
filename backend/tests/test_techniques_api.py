@@ -59,6 +59,7 @@ def test_implemented_flag_tracks_the_registry() -> None:
         "graph-rag",
         "agentic-rag",
         "interactive-rag",
+        "feedback-rag",
     }
 
 
