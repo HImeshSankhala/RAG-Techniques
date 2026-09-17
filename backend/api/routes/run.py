@@ -22,6 +22,7 @@ from core.llm import BudgetExceededError, LLMError, MissingAPIKeyError
 from core.pipeline import RAGResult
 from implementations.interactive_rag import (
     DraftNotFoundError,
+    InteractiveRAG,
     InvalidSelectionError,
     StaleDraftError,
     finalize,
@@ -66,7 +67,7 @@ def finalize_draft(request: FinalizeRequest) -> RunResponse:
         # 409: the draft conflicts with the index as it now is.
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    return _response("interactive-rag", query, result)
+    return _response(InteractiveRAG.name, query, result)
 
 
 @contextmanager
