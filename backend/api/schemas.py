@@ -25,6 +25,10 @@ class Technique(BaseModel):
     implemented: bool = Field(
         description="True when the technique has a runnable pipeline. False = docs only."
     )
+    needs_human: bool = Field(
+        description="True when a run pauses for a person (Interactive RAG). "
+        "Such techniques run in the playground but cannot be compared."
+    )
 
 
 class Chunk(BaseModel):
@@ -103,6 +107,27 @@ class RunResponse(BaseModel):
     retrieved_chunks: list[Chunk]
     steps: list[Step]
     metadata: Metadata
+    draft_id: str | None = Field(
+        default=None,
+        description="Set when the run paused for human review; pass it to POST /api/run/final.",
+    )
+
+
+# Hints end up embedded (and cost nothing locally), but an unbounded one is an
+# unbounded string in a request body. Stripped for the same reason `Query` is.
+Hint = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
+
+
+class FinalizeRequest(BaseModel):
+    """The human's half of an Interactive RAG run.
+
+    No `model`: the final answer uses the draft's model, or the run's metadata
+    would describe two models under one field.
+    """
+
+    draft_id: str
+    chunk_ids: list[str] = Field(description="Draft passages to keep. Omitted ones are dropped.")
+    hint: Hint = Field(default="", description="Steers one extra retrieval. Not shown to the model.")
 
 
 class ComparisonSide(BaseModel):

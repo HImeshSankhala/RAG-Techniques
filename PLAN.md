@@ -170,7 +170,7 @@ class Metadata:                        # fixed fields — the compare diff row l
     llm_calls: int
     retrieval_passes: int
     tokens_in: int; tokens_out: int
-    # Why the loop stopped. Every value any pipeline emits as of Phase 9 — grep
+    # Why the loop stopped. Every value any pipeline emits as of Phase 10 — grep
     # `termination_reason=` and `reason =` under implementations/ + core/graph.py:
     #   single_pass                         Standard, Fusion, Auto — there is no loop
     #   no_gaps_found | gaps_closed         Multi-Pass: critique satisfied, 1st pass / later
@@ -181,6 +181,9 @@ class Metadata:                        # fixed fields — the compare diff row l
     #   no_entities_matched | max_hops |    Graph RAG traversal outcomes
     #     node_budget | traversal_exhausted
     #   no_graph                            Graph RAG: .graph.json has not been built
+    #   awaiting_feedback                   Interactive: the draft, paused for a human
+    #   human_feedback                      Interactive: final answer from the human's selection/hint
+    #   no_change                           Interactive: kept everything, no hint — draft returned, 0 calls
     #   empty_index                         any pipeline: nothing is indexed
     termination_reason: str
     groundedness: float                # fraction of retrieved sources cited (compliance proxy)
@@ -192,6 +195,7 @@ class RAGResult:
     retrieved_chunks: list[Chunk]      # text + source + score
     steps: list[Step]                  # [{name, detail, duration_ms}] — powers UI trace
     metadata: Metadata
+    draft_id: str | None = None        # Interactive RAG's draft only: resume with POST /api/run/final
 
 class RAGPipeline(ABC):
     name: str          # "fusion-rag" (slug, matches MDX filename)
@@ -206,12 +210,19 @@ class RAGPipeline(ABC):
 
 ### API contract (mirrored in frontend/lib/api.ts)
 
-- `GET  /api/techniques` → `[{name, display_name, tagline, implemented: bool}]`
+- `GET  /api/techniques` → `[{name, display_name, tagline, implemented: bool, needs_human: bool}]`
+  `needs_human` (Interactive RAG): runnable in the playground, excluded from compare.
 - `GET  /api/models`     → `[{id, display_name, backend, is_paid, is_default, available, note}]`
 - `GET  /api/usage`      → `{spend_estimate_usd, calls, session_calls, session_call_limit}`
 - `POST /api/run`        → `{technique, query, model?}` → `RunResponse` (RAGResult + technique name)
+  `RunResponse.draft_id` is set only when the run paused for a human.
+- `POST /api/run/final`  → `{draft_id, chunk_ids, hint?}` → `RunResponse` (Phase 10). Answers again
+  from the kept draft chunks plus what the hint retrieves, on the draft's model. 404 draft
+  expired/unknown (60 min TTL, SQLite `backend/rag_lab.db`), 422 nothing to answer from,
+  409 index rebuilt since the draft.
 - `POST /api/compare`    → two `(technique × model)` sides → `{a: RunResponse, b: RunResponse}`
   Supports same-model/different-technique AND same-technique/different-model (drift).
+  409 for a `needs_human` technique — a draft or a stubbed human would misreport it.
   The diff row is built from the `Metadata` fields.
 - `POST /api/feedback`   → `{technique, query, chunk_ids, rating}` → `{ok: true}`
 

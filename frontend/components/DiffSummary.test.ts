@@ -29,6 +29,7 @@ function run(overrides: Partial<RunResponse> = {}): RunResponse {
     answer: "…",
     retrieved_chunks: chunks("dynamo.md#0", "dynamo.md#1"),
     steps: [],
+    draft_id: null,
     ...overrides,
     metadata: {
       model: "qwen3:8b",

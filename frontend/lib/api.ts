@@ -13,6 +13,8 @@ export interface Technique {
   display_name: string;
   tagline: string;
   implemented: boolean;
+  /** Pauses mid-run for a person (Interactive RAG): runnable in the playground, not comparable. */
+  needs_human: boolean;
 }
 
 /** Mirrors `api.schemas.ModelInfo`. */
@@ -63,6 +65,8 @@ export interface RunResponse {
   retrieved_chunks: Chunk[];
   steps: Step[];
   metadata: Metadata;
+  /** Set when the run paused for human review; pass it to `finalizeDraft`. */
+  draft_id: string | null;
 }
 
 /** Mirrors `api.schemas.ComparisonSide`. */
@@ -202,5 +206,22 @@ export function compareTechniques(
   return apiFetch<CompareResponse>("/api/compare", {
     method: "POST",
     body: JSON.stringify({ query, a, b }),
+  });
+}
+
+/**
+ * POST /api/run/final — the human's half of an Interactive RAG run.
+ *
+ * `chunkIds` are the draft passages to keep; the rest are dropped. `hint` steers
+ * one extra retrieval and is not shown to the model. The draft's model is reused.
+ */
+export function finalizeDraft(
+  draftId: string,
+  chunkIds: string[],
+  hint: string,
+): Promise<RunResponse> {
+  return apiFetch<RunResponse>("/api/run/final", {
+    method: "POST",
+    body: JSON.stringify({ draft_id: draftId, chunk_ids: chunkIds, hint }),
   });
 }
