@@ -9,6 +9,7 @@ import {
   finalizeDraft,
   getUsage,
   runTechnique,
+  submitFeedback,
   type ModelInfo,
   type RunResponse,
   type Technique,
@@ -211,7 +212,20 @@ export function Playground({
       {result && (
         <section className="rounded-lg border border-slate-200 p-5 dark:border-slate-800">
           {result.draft_id && <PanelHeading>Draft</PanelHeading>}
-          <ResultPanel result={result} />
+          {/* Thumbs only under Feedback RAG: its votes rerank its own later runs,
+              so offering them on another technique's answer would change a
+              technique the reader is not looking at. */}
+          <ResultPanel
+            result={result}
+            onRate={
+              result.technique === "feedback-rag"
+                ? (chunkId, rating) =>
+                    submitFeedback(result.technique, result.query, [chunkId], rating).then(
+                      () => undefined,
+                    )
+                : undefined
+            }
+          />
         </section>
       )}
 

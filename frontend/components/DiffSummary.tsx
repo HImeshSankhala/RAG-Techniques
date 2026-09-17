@@ -128,7 +128,8 @@ function reasonNote(sides: RunResponse[]): string {
 }
 
 /**
- * A sentence naming what actually varied.
+ * A sentence naming what actually varied, plus the feedback caveat when a side
+ * was reranked by stored votes.
  *
  * Written per case rather than as one generic template: "they retrieved
  * different evidence" and "they retrieved the same evidence and the model
@@ -136,6 +137,44 @@ function reasonNote(sides: RunResponse[]): string {
  * one they are looking at from four numbers.
  */
 export function summarise(
+  diff: ComparisonDiff,
+  a: RunResponse,
+  b: RunResponse,
+  empty: number,
+): string {
+  return `${comparison(diff, a, b, empty)}${feedbackNote(a, b)}`;
+}
+
+/**
+ * The caveat a feedback-reranked side needs, or "" when neither side has votes.
+ *
+ * Without it the row above is true but incomplete in the most misleading way:
+ * every other technique is a function of its query, so "they retrieved different
+ * evidence" reads as "these two techniques disagree". A side whose ranking was
+ * shifted by stored votes did not disagree about this query — it is carrying the
+ * history of earlier ones, and re-running the same comparison after more votes
+ * can give a different answer.
+ */
+function feedbackNote(a: RunResponse, b: RunResponse): string {
+  const sides = [
+    { label: "A", run: a },
+    { label: "B", run: b },
+  ].filter((side) => side.run.metadata.feedback_votes > 0);
+
+  if (sides.length === 0) return "";
+
+  const applied = sides
+    .map(
+      (side) =>
+        `${side.label} (${side.run.technique}) applied ${side.run.metadata.feedback_votes} stored ` +
+        `vote${side.run.metadata.feedback_votes === 1 ? "" : "s"}`,
+    )
+    .join(" and ");
+
+  return ` ${applied} to its ranking, so this comparison depends on feedback history as well as the query — the same two techniques on the same query gave a different result before those votes were cast.`;
+}
+
+function comparison(
   diff: ComparisonDiff,
   a: RunResponse,
   b: RunResponse,

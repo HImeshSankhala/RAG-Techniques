@@ -1,6 +1,12 @@
+"use client";
+
+import { useState } from "react";
 import type { Chunk, RunResponse } from "@/lib/api";
 import { formatMs, money } from "@/lib/format";
 import { StepsTrace } from "@/components/StepsTrace";
+
+/** Rate one passage. Resolves when the vote is stored, rejects with the API error. */
+export type RateChunk = (chunkId: string, rating: 1 | -1) => Promise<void>;
 
 /**
  * One completed run: the answer, the numbers behind it, the passages it was given,
@@ -8,8 +14,14 @@ import { StepsTrace } from "@/components/StepsTrace";
  *
  * Built to be embeddable twice side by side — Phase 5's compare view renders two
  * of these — so it takes a whole `RunResponse` and owns no layout width of its own.
+ *
+ * `onRate` adds thumbs to each passage. It is passed only by the playground, and
+ * only for Feedback RAG: votes rerank *that* technique's future runs, so offering
+ * them under another technique's answer would change something the reader was not
+ * looking at. The compare view never passes it — voting mid-comparison would move
+ * one side's ranking while the two are being read against each other.
  */
-export function ResultPanel({ result }: { result: RunResponse }) {
+export function ResultPanel({ result, onRate }: { result: RunResponse; onRate?: RateChunk }) {
   const { metadata } = result;
 
   return (
@@ -50,7 +62,7 @@ export function ResultPanel({ result }: { result: RunResponse }) {
         </summary>
         <div className="space-y-3 border-t border-slate-200 px-4 py-3 dark:border-slate-800">
           {result.retrieved_chunks.map((chunk, index) => (
-            <ChunkCard key={chunk.chunk_id} chunk={chunk} rank={index + 1} />
+            <ChunkCard key={chunk.chunk_id} chunk={chunk} rank={index + 1} onRate={onRate} />
           ))}
         </div>
       </details>
@@ -65,7 +77,30 @@ export function ResultPanel({ result }: { result: RunResponse }) {
   );
 }
 
-function ChunkCard({ chunk, rank }: { chunk: Chunk; rank: number }) {
+function ChunkCard({
+  chunk,
+  rank,
+  onRate,
+}: {
+  chunk: Chunk;
+  rank: number;
+  onRate?: RateChunk;
+}) {
+  // Not optimistic: a vote that failed to store must not be shown as stored, or
+  // the reader waits for an effect on the next run that can never arrive.
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+
+  async function rate(rating: 1 | -1) {
+    if (!onRate) return;
+    setStatus("sending");
+    try {
+      await onRate(chunk.chunk_id, rating);
+      setStatus("sent");
+    } catch {
+      setStatus("failed");
+    }
+  }
+
   return (
     <article className="rounded border border-slate-200 p-3 dark:border-slate-800">
       <div className="flex items-baseline justify-between gap-3 text-xs">
@@ -79,6 +114,33 @@ function ChunkCard({ chunk, rank }: { chunk: Chunk; rank: number }) {
       <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-slate-400">
         {chunk.text}
       </p>
+      {onRate && (
+        <div className="mt-3 flex items-center gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => rate(1)}
+            disabled={status === "sending"}
+            className="rounded border border-slate-200 px-2 py-1 transition hover:border-slate-400 disabled:opacity-40 dark:border-slate-800 dark:hover:border-slate-600"
+          >
+            👍 helpful
+          </button>
+          <button
+            type="button"
+            onClick={() => rate(-1)}
+            disabled={status === "sending"}
+            className="rounded border border-slate-200 px-2 py-1 transition hover:border-slate-400 disabled:opacity-40 dark:border-slate-800 dark:hover:border-slate-600"
+          >
+            👎 not helpful
+          </button>
+          <span className="text-slate-500">
+            {status === "sent"
+              ? "stored — run again to see it move. Every click counts."
+              : status === "failed"
+                ? "not stored — try again"
+                : "stored votes rerank future runs of this technique"}
+          </span>
+        </div>
+      )}
     </article>
   );
 }
