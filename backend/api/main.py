@@ -8,7 +8,7 @@ cheap to build later.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import compare, models, run, techniques
+from api.routes import compare, feedback, models, run, techniques
 from core.config import settings
 
 app = FastAPI(
@@ -29,6 +29,7 @@ app.include_router(techniques.router)
 app.include_router(run.router)
 app.include_router(models.router)
 app.include_router(compare.router)
+app.include_router(feedback.router)
 
 
 @app.get("/api/health", tags=["health"])

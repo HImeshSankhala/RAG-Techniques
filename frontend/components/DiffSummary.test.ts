@@ -42,6 +42,7 @@ function run(overrides: Partial<RunResponse> = {}): RunResponse {
       termination_reason: "single_pass",
       groundedness: 1,
       cost_estimate_usd: 0,
+      feedback_votes: 0,
       ...overrides.metadata,
     },
   };
@@ -315,6 +316,70 @@ describe("summarise — branch boundaries", () => {
     expect(summarise(diff({ chunk_overlap_pct: 100 }), empty, run(), 1)).toContain(
       "retrieved nothing at all",
     );
+  });
+});
+
+// --- the feedback caveat ---------------------------------------------------
+
+describe("summarise — a side reranked by stored votes", () => {
+  /** Feedback RAG, reporting `feedback_votes` stored votes matched to its candidates. */
+  function voted(votes: number): RunResponse {
+    const base = run({ technique: "feedback-rag" });
+    return { ...base, metadata: { ...base.metadata, feedback_votes: votes } };
+  }
+
+  it("says nothing extra when neither side used stored votes", () => {
+    const sentence = summarise(diff({ same_technique: false }), run(), run(), 0);
+
+    expect(sentence).not.toContain("stored vote");
+    expect(sentence).not.toContain("feedback history");
+  });
+
+  it("warns that the result depends on history when a side counted votes", () => {
+    // Without this clause the row says "they retrieved different evidence",
+    // which reads as a disagreement about THIS query. It is not: one side is
+    // carrying judgments cast on earlier ones.
+    const sentence = summarise(
+      diff({ chunk_overlap: 1, chunk_overlap_pct: 25, same_technique: false }),
+      run(),
+      voted(6),
+      0,
+    );
+
+    expect(sentence).toContain("B (feedback-rag) counted 6 stored votes");
+    expect(sentence).toContain("feedback history");
+  });
+
+  it("names both sides when both counted votes, and keeps the singular honest", () => {
+    const sentence = summarise(diff(), voted(1), voted(3), 0);
+
+    expect(sentence).toContain("A (feedback-rag) counted 1 stored vote");
+    expect(sentence).not.toContain("counted 1 stored votes");
+    expect(sentence).toContain("B (feedback-rag) counted 3 stored votes");
+  });
+
+  it("does NOT claim the votes changed anything", () => {
+    // `feedback_votes` counts matched rows, not rows that moved a passage. An
+    // upvote on what was already first, a downvote on the last candidate, or a
+    // +1 and a -1 that cancel all leave the ranking exactly as the retriever
+    // had it — and this sentence fires on all three. Claiming the comparison
+    // "gave a different result before those votes" would be false in every one
+    // of them, so the claim is forward-looking and the trace is where a reader
+    // finds out what actually moved.
+    const sentence = summarise(diff({ same_technique: false }), run(), voted(2), 0);
+
+    expect(sentence).not.toContain("gave a different result");
+    expect(sentence).toContain("can come out differently");
+    expect(sentence).toContain("trace");
+  });
+
+  it("keeps the caveat when the two sides retrieved identical evidence", () => {
+    // 100% overlap here does not mean feedback is absent — it can mean the
+    // votes have not moved anything yet, and the next vote will.
+    const sentence = summarise(diff({ same_technique: false }), run(), voted(2), 0);
+
+    expect(sentence).toContain("identical evidence");
+    expect(sentence).toContain("counted 2 stored votes");
   });
 });
 

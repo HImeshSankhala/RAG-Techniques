@@ -1,4 +1,4 @@
-.PHONY: setup dev dev-backend dev-frontend index graph test lint eval
+.PHONY: setup dev dev-backend dev-frontend index graph test lint eval reset-feedback
 
 # Python 3.11+ required. Full path, not bare `python3.12`, because an Anaconda
 # install earlier on PATH would otherwise shadow the Homebrew one. Override with:
@@ -52,6 +52,13 @@ test:
 # red. Requires the index (`make index`).
 eval:
 	cd backend && .venv/bin/python -m evals.retrieval
+
+# Feedback RAG only. Deletes every stored vote, so the next run ranks like Standard
+# RAG again. A maintenance command rather than a button: a demoted passage stops
+# being shown and therefore stops having thumbs, and that dead end IS the lesson —
+# putting an undo in the UI would quietly cancel it.
+reset-feedback:
+	cd backend && .venv/bin/python -c "from implementations.feedback_rag import clear_feedback; print(f'Deleted {clear_feedback()} stored votes.')"
 
 lint:
 	cd backend && .venv/bin/ruff check .

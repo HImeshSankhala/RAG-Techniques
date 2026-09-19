@@ -55,6 +55,14 @@ export interface Metadata {
   termination_reason: string;
   groundedness: number;
   cost_estimate_usd: number;
+  /**
+   * Stored votes counted against this run's candidates — Feedback RAG only, 0 for
+   * every other technique. Matched rows, NOT rows that moved something: the cap
+   * may have discarded some, and a vote can point where the retriever already
+   * did. Non-zero means the result depends on accumulated history, which is what
+   * the compare row has to say out loud.
+   */
+  feedback_votes: number;
 }
 
 /** Mirrors `api.schemas.RunResponse`. */
@@ -223,5 +231,23 @@ export function finalizeDraft(
   return apiFetch<RunResponse>("/api/run/final", {
     method: "POST",
     body: JSON.stringify({ draft_id: draftId, chunk_ids: chunkIds, hint }),
+  });
+}
+
+/**
+ * POST /api/feedback — one thumbs up or down on the passages a run showed.
+ *
+ * Only `feedback-rag` accepts votes (409 otherwise). Every call is a vote: there
+ * is no dedupe, so clicking twice counts twice, by design.
+ */
+export function submitFeedback(
+  technique: string,
+  query: string,
+  chunkIds: string[],
+  rating: 1 | -1,
+): Promise<{ ok: true }> {
+  return apiFetch<{ ok: true }>("/api/feedback", {
+    method: "POST",
+    body: JSON.stringify({ technique, query, chunk_ids: chunkIds, rating }),
   });
 }

@@ -1,7 +1,9 @@
 ## What it is
 
 Feedback-Based RAG persists user judgments. A thumbs up or down on a retrieved passage is
-stored, and future retrievals for similar queries boost or demote that passage.
+stored, and future retrievals boost or demote that passage. In this lab the vote is *global*:
+it is keyed to the passage itself, so it applies to every later question, not only to similar
+ones. That is the simplest thing that works, and the section on naive boosting is what it costs.
 
 Interactive RAG asks the user and forgets. This one remembers.
 
@@ -18,23 +20,32 @@ without retraining anything.
 
 ```mermaid
 flowchart TD
-  Q[Question] --> R[Retrieve top-k]
-  R --> W[Apply stored weights]
-  W --> K[Re-ranked passages]
+  Q[Question] --> R[Retrieve 12 candidates]
+  R --> W[Apply stored votes: shift by rank]
+  W --> K[Top 4 after re-ranking]
   K --> A[Answer]
   A --> U{User rates passages}
   U -->|thumbs up / down| DB[(SQLite: query, chunk, rating)]
   DB -.-> W
 ```
 
-The dotted line is the loop: today's feedback changes tomorrow's ranking. Scoring becomes:
+The dotted line is the loop: today's feedback changes tomorrow's ranking. The obvious scoring
+rule adds a weight to the similarity score, and it is the Fusion RAG mistake again: similarity
+lives on a different scale for every query. Measured on this corpus, the twelve candidates for
+"What is hinted handoff?" score 0.136-0.256, while those for "How does Dynamo handle conflicting
+concurrent writes?" score 0.452-0.762 — one fixed weight would decide the first ranking outright
+and do nothing to the second. Ranks are comparable across queries; scores are not. So a vote buys
+*places*, not points:
 
 ```
-final_score = similarity + α · weight(query_cluster, chunk_id)
+position  = dense_rank − SHIFT · clamp(net_votes, −CAP, +CAP)     # SHIFT = 2, CAP = 3
+re-ranked = sort by (position, dense_rank), then keep the top 4
 ```
 
-`α` controls how much feedback can override the retriever. It is the most consequential
-number in the system.
+`SHIFT` controls how much feedback can override the retriever. It is the most consequential
+number in the system: at 2, three net votes move a passage five places, which is enough to evict
+the retriever's own first choice. (Six is the shift applied to the sort key; the passage it lands
+level with keeps the tie, so it gains one place less than that.)
 
 ## Why naive boosting is dangerous
 
@@ -49,7 +60,11 @@ is never rated, so it can never recover. The system converges on a small set of
 This is the recommender-systems filter bubble, arriving in a RAG pipeline. The standard
 mitigations apply:
 
-- **Cap the weight.** Feedback nudges ranking; it must not dominate similarity.
+- **Cap the weight.** Feedback should nudge ranking, not dominate similarity. This lab caps the
+  net votes per passage (`CAP = 3`) but deliberately sets `SHIFT` high enough that three votes
+  *do* dominate — the retriever's top passage can be voted out of the answer. That is a demo
+  setting, chosen so the failure is a few clicks away instead of a few thousand; a real system
+  picks a shift small enough that feedback only breaks ties.
 - **Decay old feedback.** A rating from six months ago describes a corpus that may have
   changed.
 - **Reserve exploration slots.** Keep one or two unboosted results in every top-k so

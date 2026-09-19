@@ -119,14 +119,16 @@ class LLMLedger:
         retrieval_passes: int,
         termination_reason: str,
         groundedness: float = 0.0,
+        feedback_votes: int = 0,
     ) -> Metadata:
         """The run's `Metadata`, with every LLM field filled from this ledger.
 
-        Keyword-only, and the four parameters are the four things a pipeline
-        knows that a ledger cannot: how long it took, how many times it
-        retrieved, why it stopped, and how well the answer cited its evidence.
-        `groundedness` defaults because the early-return paths have no answer to
-        measure.
+        Keyword-only, and the parameters are the things a pipeline knows that a
+        ledger cannot: how long it took, how many times it retrieved, why it
+        stopped, how well the answer cited its evidence, and — Feedback RAG only —
+        how many stored votes shaped its ranking. `groundedness` defaults because
+        the early-return paths have no answer to measure; `feedback_votes`
+        defaults because seven of the eight techniques have no vote store.
         """
         return Metadata(
             model=self.model,
@@ -139,4 +141,5 @@ class LLMLedger:
             termination_reason=termination_reason,
             groundedness=groundedness,
             cost_estimate_usd=self.cost_estimate_usd,
+            feedback_votes=feedback_votes,
         )

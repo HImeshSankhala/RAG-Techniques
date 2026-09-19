@@ -4,9 +4,11 @@ These are the source of truth. `frontend/lib/api.ts` mirrors them by hand; when 
 schema changes here, that file changes too or the frontend is lying about the API.
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, field_validator
+
+from core.config import settings
 
 # `min_length` on a plain `str` counts characters, not content, so "   " passed
 # validation and reached the model — which then invented its own question and
@@ -63,6 +65,12 @@ class Metadata(BaseModel):
         description="Fraction of retrieved sources cited. Compliance proxy, not accuracy."
     )
     cost_estimate_usd: float = Field(description="Estimated USD; 0.0 on the local backend.")
+    feedback_votes: int = Field(
+        default=0,
+        description="Stored votes counted against this run's candidates (Feedback RAG only; "
+        "0 everywhere else). Matched rows, before the per-passage cap — some may have moved "
+        "nothing. Non-zero means the result depends on history, not the query alone.",
+    )
 
 
 class ModelInfo(BaseModel):
@@ -128,6 +136,42 @@ class FinalizeRequest(BaseModel):
     draft_id: str
     chunk_ids: list[str] = Field(description="Draft passages to keep. Omitted ones are dropped.")
     hint: Hint = Field(default="", description="Steers one extra retrieval. Not shown to the model.")
+
+
+class FeedbackRequest(BaseModel):
+    """One thumbs up or down, on the passages a Feedback RAG result showed.
+
+    No text field: the server reads each passage's current text out of the index
+    and hashes that, so a client can only rate text this server retrieved.
+    """
+
+    technique: str = Field(description="Technique slug the passages were shown under.")
+    query: Query = Field(description="The question they were retrieved for. Stored, not scored.")
+    chunk_ids: list[str] = Field(
+        min_length=1,
+        # A panel shows top_k passages, so a larger batch is a malformed client
+        # rather than a bigger opinion.
+        max_length=settings.top_k,
+        description="Passages being rated. Duplicates are rejected.",
+    )
+    rating: Literal[-1, 1] = Field(description="-1 for thumbs down, 1 for thumbs up.")
+
+    @field_validator("chunk_ids")
+    @classmethod
+    def _no_duplicates(cls, chunk_ids: list[str]) -> list[str]:
+        # Votes are append-only by design, so three copies of one id in one
+        # request would be three votes from one click — an amplification the
+        # reader never asked for.
+        if len(set(chunk_ids)) != len(chunk_ids):
+            raise ValueError("chunk_ids contains duplicates; each passage may be rated once.")
+        return chunk_ids
+
+
+class FeedbackResponse(BaseModel):
+    """POST /api/feedback. Nothing to return but acknowledgement — the effect is
+    visible on the next run of Feedback RAG, in its trace."""
+
+    ok: Literal[True] = True
 
 
 class ComparisonSide(BaseModel):

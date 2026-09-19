@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from core.pipeline import RAGPipeline
 from implementations.agentic_rag import AgenticRAG
 from implementations.auto_rag import AutoRAG
+from implementations.feedback_rag import FeedbackRAG
 from implementations.fusion_rag import FusionRAG
 from implementations.graph_rag import GraphRAG
 from implementations.interactive_rag import InteractiveRAG
@@ -27,6 +28,7 @@ PIPELINES: dict[str, RAGPipeline] = {
     GraphRAG.name: GraphRAG(),
     AgenticRAG.name: AgenticRAG(),
     InteractiveRAG.name: InteractiveRAG(),
+    FeedbackRAG.name: FeedbackRAG(),
 }
 
 

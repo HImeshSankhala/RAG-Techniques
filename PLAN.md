@@ -172,7 +172,7 @@ class Metadata:                        # fixed fields — the compare diff row l
     tokens_in: int; tokens_out: int
     # Why the loop stopped. Every value any pipeline emits as of Phase 10 — grep
     # `termination_reason=` and `reason =` under implementations/ + core/graph.py:
-    #   single_pass                         Standard, Fusion, Auto — there is no loop
+    #   single_pass                         Standard, Fusion, Auto, Feedback — there is no loop
     #   no_gaps_found | gaps_closed         Multi-Pass: critique satisfied, 1st pass / later
     #   agent_stopped                       Agentic: the planner replied ANSWER
     #   repeated_action                     Agentic: planner re-asked a search it had run
@@ -188,6 +188,9 @@ class Metadata:                        # fixed fields — the compare diff row l
     termination_reason: str
     groundedness: float                # fraction of retrieved sources cited (compliance proxy)
     cost_estimate_usd: float           # 0.0 on the local backend
+    feedback_votes: int                # Feedback RAG only (Phase 11): stored votes this ranking
+                                       # was built from; 0 everywhere else. Non-zero means the
+                                       # result depends on history, which the compare row says.
 
 @dataclass
 class RAGResult:
@@ -224,7 +227,13 @@ class RAGPipeline(ABC):
   Supports same-model/different-technique AND same-technique/different-model (drift).
   409 for a `needs_human` technique — a draft or a stubbed human would misreport it.
   The diff row is built from the `Metadata` fields.
-- `POST /api/feedback`   → `{technique, query, chunk_ids, rating}` → `{ok: true}`
+- `POST /api/feedback`   → `{technique, query, chunk_ids, rating}` → `{ok: true}` (Phase 11).
+  `rating` is 1 or -1; `chunk_ids` are the passages shown (≤ `top_k`, no duplicates). Votes are
+  global and keyed to the passage TEXT (a hash the server takes from the index), append-only —
+  every click counts. 404 unknown technique, 409 a technique that does not use feedback (only
+  `feedback-rag` reads these votes), 422 duplicate ids / an id not in the index / a rating that
+  is not ±1. Nothing is written unless the whole batch is valid. `make reset-feedback` clears
+  the store.
 
 **Why `steps` matters:** every pipeline logs its stages ("Embedded query — 12ms", "Retrieved 5 chunks", "Pass 2: found gaps: [dates]"). The frontend renders this as a trace timeline. In compare mode, seeing Standard RAG's 3 steps next to Multi-Pass's 9 steps IS the lesson.
 
@@ -338,7 +347,17 @@ Each phase ends demo-able. Do not start N+1 until N runs.
 - **Learning focus:** human-in-the-loop; API becomes two-step (needs a session/draft id).
 
 ### Phase 11 — Feedback-Based RAG
-- Thumbs up/down on chunks → SQLite → future rankings boost/demote (simple weight)
+- Thumbs up/down on chunks → SQLite → future rankings boost/demote
+- **Built as a rank shift, not a score-space weight.** This section originally said "simple
+  weight", which reads as `score + α · votes`. That is the mistake Phase 4 exists to teach:
+  similarity scores are not comparable across queries. Measured on this corpus, the twelve
+  candidates for "What is hinted handoff?" score 0.136-0.256 while those for "How does Dynamo
+  handle conflicting concurrent writes?" score 0.452-0.762, so one α would decide the first
+  ranking outright and do nothing to the second. Ranks are comparable, so a vote buys places:
+  `position = dense_rank − SHIFT · clamp(net_votes, −CAP, CAP)`, SHIFT=2, CAP=3, over-fetch 12,
+  ties to the retriever. Still one number per passage and no training — the "simple" holds; it
+  is the units that changed. See `backend/implementations/feedback_rag.py` and
+  `LEARNINGS/phase-11-feedback-rag.md`.
 - **Learning focus:** online feedback loops; why naive boosting can create filter bubbles.
 
 ### Phase 12 — REALM page + Showcase (GIFs first)

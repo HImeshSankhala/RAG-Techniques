@@ -128,7 +128,8 @@ function reasonNote(sides: RunResponse[]): string {
 }
 
 /**
- * A sentence naming what actually varied.
+ * A sentence naming what actually varied, plus the feedback caveat when a side
+ * was reranked by stored votes.
  *
  * Written per case rather than as one generic template: "they retrieved
  * different evidence" and "they retrieved the same evidence and the model
@@ -136,6 +137,50 @@ function reasonNote(sides: RunResponse[]): string {
  * one they are looking at from four numbers.
  */
 export function summarise(
+  diff: ComparisonDiff,
+  a: RunResponse,
+  b: RunResponse,
+  empty: number,
+): string {
+  return `${comparison(diff, a, b, empty)}${feedbackNote(a, b)}`;
+}
+
+/**
+ * The caveat a feedback-reranked side needs, or "" when neither side has votes.
+ *
+ * Without it the row above is true but incomplete in the most misleading way:
+ * every other technique is a function of its query, so "they retrieved different
+ * evidence" reads as "these two techniques disagree". A side reranked by stored
+ * votes is not only answering this query — it is carrying judgments cast on
+ * earlier ones.
+ *
+ * What this clause must NOT claim is that the votes changed anything. The count
+ * is matched rows, not rows that moved a passage: an upvote on the passage that
+ * was already first, a downvote on the last candidate, or a +1 and a −1 that
+ * cancel all leave the ranking exactly as the retriever had it. So the tense is
+ * forward-looking — this CAN change — and the run's own trace is where a reader
+ * sees what actually moved.
+ */
+function feedbackNote(a: RunResponse, b: RunResponse): string {
+  const sides = [
+    { label: "A", run: a },
+    { label: "B", run: b },
+  ].filter((side) => side.run.metadata.feedback_votes > 0);
+
+  if (sides.length === 0) return "";
+
+  const counted = sides
+    .map(
+      (side) =>
+        `${side.label} (${side.run.technique}) counted ${side.run.metadata.feedback_votes} stored ` +
+        `vote${side.run.metadata.feedback_votes === 1 ? "" : "s"}`,
+    )
+    .join(" and ");
+
+  return ` ${counted} against its candidates, so this comparison depends on feedback history as well as the query: run it again after more votes and it can come out differently. The trace says which passages the votes actually moved.`;
+}
+
+function comparison(
   diff: ComparisonDiff,
   a: RunResponse,
   b: RunResponse,
