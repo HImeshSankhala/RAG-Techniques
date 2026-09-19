@@ -48,15 +48,18 @@ interface for it.
 technique *is* the baseline. Saying so in code means the two cannot drift.
 
 **Excluded from compare.** A technique that needs a person mid-run has no honest unattended
-result. A compare side would show either a paused draft, which looks identical to Standard RAG,
-or a stubbed human, which fakes the lesson. `/api/techniques` exposes `needs_human`, compare
+result. Run unattended, it shows Standard RAG's answer under Interactive RAG's name (or a stubbed
+human, which fakes the lesson), so the compare view would misreport what the technique does. `/api/techniques` exposes `needs_human`, compare
 returns 409, and the selectors disable it. The flag is derived in the registry with `isinstance`,
 not declared on `RAGPipeline`, so the engine contract carries no per-technique special case.
 
-**Metadata spans two requests, so each panel reports only its own leg.** The Final panel's
-`llm_calls`, tokens, cost and latency cover the final request only. The Draft panel above it
-already shows the draft's. Cumulative numbers were possible (replay the draft call into the
-ledger), but then the two panels on screen don't add up. The human's wait is a `Human review` step
+**Metadata spans two requests, so each panel reports its own leg — with one exception.** The
+Final panel's `llm_calls`, tokens, cost and latency cover the final request only; the Draft panel
+above it already shows the draft's. Cumulative numbers were possible (replay the draft call into
+the ledger), but then those numbers would double-count the draft. The exception is
+`retrieval_passes`: it counts the retrievals behind the final evidence, which includes the draft's,
+so a click-through Final shows 1 pass for a leg that retrieved nothing, and the two panels' pass
+counts do not add up. The human's wait is a `Human review` step
 with its real duration, and it is excluded from `latency_ms`. The trace bars are relative to the
 slowest step, so a 30-second review shrinks every machine step to a sliver. "Human-bounded
 latency" becomes visible instead of being hidden in a number.
@@ -74,14 +77,14 @@ draft is one more capped call.
   hint "vector clocks reconciliation" on the Dynamo query brought back **all 4 draft chunks**
   in its top 8. A plain top-4 would have found nothing new; the over-fetch found 4. Cost: one
   HNSW query with k+d, roughly O(log N) per lookup plus O(k+d) to filter. Exclusion is a set
-  lookup, so O(k) overall.
+  lookup per hit, so O(k+d) over the k+d hits.
 - **Lazy TTL expiry.** No cleanup job. Each insert runs `DELETE … WHERE created_at < now - TTL`, a
   full scan (O(n), where n is at most an hour of drafts, so no index), and each read also checks
   age, because a row can expire between sweeps. The trade-off: an index or a background task buys
   nothing at this size, and adds a moving part.
 - **Draft ids** are `uuid4` (122 random bits): unguessable, but **not** authentication. Anyone
-  holding the id can trigger a final call. That's acceptable for a local app, and it's why the id
-  is never exposed through compare.
+  holding the id can trigger a final call. That's acceptable for a local app. (Compare never hands
+  one out, but only as a side effect of the honesty exclusion above.)
 - **One SQLite connection per operation.** FastAPI runs sync handlers on a thread pool, and a
   `sqlite3` connection belongs to its opening thread. Gotcha: `with sqlite3.connect(...)` commits
   on exit but does **not** close. Use `contextlib.closing`.

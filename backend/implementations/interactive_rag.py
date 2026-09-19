@@ -117,9 +117,11 @@ class InteractiveRAG(RAGPipeline):
 def finalize(draft_id: str, keep_chunk_ids: list[str], hint: str) -> tuple[str, RAGResult]:
     """The final half. Returns the draft's query alongside the result.
 
-    Every rejection happens before any LLM call. The metadata covers this leg
-    only — the draft's panel already reports its own call — so the two panels'
-    numbers add up instead of double-counting the draft.
+    Every rejection happens before any LLM call. `llm_calls`, tokens, cost and
+    latency cover this leg only — the draft's panel already reports its own call.
+    The exception is `retrieval_passes`, which counts the retrieval behind the
+    evidence and so includes the draft's: a click-through final reports 1 pass
+    for a leg that retrieved nothing.
     """
     steps = StepRecorder()
     draft = _load(draft_id)
@@ -264,7 +266,11 @@ def _connect() -> sqlite3.Connection:
     connection itself as a context manager commits but does NOT close it.
     """
     conn = sqlite3.connect(settings.db_path)
-    conn.execute(_SCHEMA)
+    try:
+        conn.execute(_SCHEMA)
+    except BaseException:
+        conn.close()
+        raise
     return conn
 
 

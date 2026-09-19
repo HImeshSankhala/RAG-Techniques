@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DraftReview } from "@/components/DraftReview";
 import { ResultPanel } from "@/components/ResultPanel";
 import {
@@ -38,6 +38,9 @@ export function Playground({
   const preselected = runnable.find((t) => t.name === requested)?.name;
 
   const [technique, setTechnique] = useState(preselected ?? runnable[0]?.name ?? "");
+  // The selection *now*, readable from an in-flight run's continuation — its
+  // closure only has the technique as it was when Run was pressed.
+  const currentTechnique = useRef(technique);
   const [model, setModel] = useState(models.find((m) => m.is_default)?.id ?? models[0]?.id ?? "");
   const [query, setQuery] = useState(PRESET_QUERIES[0]);
 
@@ -66,7 +69,10 @@ export function Playground({
     setFinal(null);
 
     try {
-      setResult(await runTechnique(technique, query.trim(), model || undefined));
+      const response = await runTechnique(technique, query.trim(), model || undefined);
+      // Switched technique mid-run: drop the stale answer rather than show (and
+      // offer to finalize) one technique's draft under another's name.
+      if (response.technique === currentTechnique.current) setResult(response);
     } catch (cause) {
       setError(
         cause instanceof ApiError ? cause : new ApiError("Unexpected error running query.", 0),
@@ -110,6 +116,7 @@ export function Playground({
                 // A draft belongs to the technique that made it; leaving it on
                 // screen under another technique would offer to finalize it there.
                 setTechnique(e.target.value);
+                currentTechnique.current = e.target.value;
                 setResult(null);
                 setFinal(null);
               }}
