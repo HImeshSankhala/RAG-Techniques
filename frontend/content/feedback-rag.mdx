@@ -43,8 +43,9 @@ re-ranked = sort by (position, dense_rank), then keep the top 4
 ```
 
 `SHIFT` controls how much feedback can override the retriever. It is the most consequential
-number in the system: at 2, three net votes move a passage six places, which is enough to evict
-the retriever's own first choice.
+number in the system: at 2, three net votes move a passage five places, which is enough to evict
+the retriever's own first choice. (Six is the shift applied to the sort key; the passage it lands
+level with keeps the tie, so it gains one place less than that.)
 
 ## Why naive boosting is dangerous
 

@@ -48,7 +48,7 @@ pattern is repeated rather than extracted — the rule of three is not met yet.
 
 **One new `Metadata` field: `feedback_votes`.** Every other technique is a function of its query.
 This one is not, and the compare view had no way to say that: it would have reported accumulated
-history as a retrieval disagreement. The field is 0 for the other six, and `DiffSummary` appends a
+history as a retrieval disagreement. The field is 0 for the other seven, and `DiffSummary` appends a
 clause naming the count when a side used votes. That branch is the phase's only Vitest case, because
 it is a pure function that decides what the reader is told.
 

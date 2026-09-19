@@ -347,7 +347,17 @@ Each phase ends demo-able. Do not start N+1 until N runs.
 - **Learning focus:** human-in-the-loop; API becomes two-step (needs a session/draft id).
 
 ### Phase 11 — Feedback-Based RAG
-- Thumbs up/down on chunks → SQLite → future rankings boost/demote (simple weight)
+- Thumbs up/down on chunks → SQLite → future rankings boost/demote
+- **Built as a rank shift, not a score-space weight.** This section originally said "simple
+  weight", which reads as `score + α · votes`. That is the mistake Phase 4 exists to teach:
+  similarity scores are not comparable across queries. Measured on this corpus, the twelve
+  candidates for "What is hinted handoff?" score 0.136-0.256 while those for "How does Dynamo
+  handle conflicting concurrent writes?" score 0.452-0.762, so one α would decide the first
+  ranking outright and do nothing to the second. Ranks are comparable, so a vote buys places:
+  `position = dense_rank − SHIFT · clamp(net_votes, −CAP, CAP)`, SHIFT=2, CAP=3, over-fetch 12,
+  ties to the retriever. Still one number per passage and no training — the "simple" holds; it
+  is the units that changed. See `backend/implementations/feedback_rag.py` and
+  `LEARNINGS/phase-11-feedback-rag.md`.
 - **Learning focus:** online feedback loops; why naive boosting can create filter bubbles.
 
 ### Phase 12 — REALM page + Showcase (GIFs first)
