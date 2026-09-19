@@ -67,8 +67,9 @@ class Metadata(BaseModel):
     cost_estimate_usd: float = Field(description="Estimated USD; 0.0 on the local backend.")
     feedback_votes: int = Field(
         default=0,
-        description="Stored votes this run's ranking was built from (Feedback RAG only; "
-        "0 everywhere else). Non-zero means the result depends on history, not the query alone.",
+        description="Stored votes counted against this run's candidates (Feedback RAG only; "
+        "0 everywhere else). Matched rows, before the per-passage cap — some may have moved "
+        "nothing. Non-zero means the result depends on history, not the query alone.",
     )
 
 

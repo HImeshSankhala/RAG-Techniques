@@ -128,7 +128,7 @@ class LLMLedger:
         stopped, how well the answer cited its evidence, and — Feedback RAG only —
         how many stored votes shaped its ranking. `groundedness` defaults because
         the early-return paths have no answer to measure; `feedback_votes`
-        defaults because six of the seven techniques have no vote store.
+        defaults because seven of the eight techniques have no vote store.
         """
         return Metadata(
             model=self.model,

@@ -88,16 +88,34 @@ function ChunkCard({
 }) {
   // Not optimistic: a vote that failed to store must not be shown as stored, or
   // the reader waits for an effect on the next run that can never arrive.
-  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  //
+  // The status is held WITH the chunk object it was recorded against. A new run
+  // hands this card a new object while React keeps the instance (the list is
+  // keyed by chunk_id), so tying the two together is what stops "stored — run
+  // again to see it move" from outliving the run it asked for.
+  const [vote, setVote] = useState<{
+    chunk: Chunk;
+    status: "sending" | "sent" | "failed";
+    failure: string;
+  } | null>(null);
+  const current = vote?.chunk === chunk ? vote : null;
+  const status = current?.status ?? "idle";
 
   async function rate(rating: 1 | -1) {
     if (!onRate) return;
-    setStatus("sending");
+    setVote({ chunk, status: "sending", failure: "" });
     try {
       await onRate(chunk.chunk_id, rating);
-      setStatus("sent");
-    } catch {
-      setStatus("failed");
+      setVote({ chunk, status: "sent", failure: "" });
+    } catch (error) {
+      // The server's own words: the likeliest failure is a 422 saying the index
+      // was rebuilt and the query has to be run again, which "try again" would
+      // flatly contradict — re-clicking fails identically.
+      setVote({
+        chunk,
+        status: "failed",
+        failure: error instanceof Error ? error.message : "try again",
+      });
     }
   }
 
@@ -136,7 +154,7 @@ function ChunkCard({
             {status === "sent"
               ? "stored — run again to see it move. Every click counts."
               : status === "failed"
-                ? "not stored — try again"
+                ? `not stored: ${current?.failure ?? "try again"}`
                 : "stored votes rerank future runs of this technique"}
           </span>
         </div>

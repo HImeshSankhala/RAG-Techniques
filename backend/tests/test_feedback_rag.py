@@ -21,6 +21,7 @@ from core.pipeline import Chunk
 from implementations.feedback_rag import (
     CAP,
     FEEDBACK_CANDIDATES,
+    SHIFT,
     FeedbackRAG,
     chunk_hash,
     clear_feedback,
@@ -239,12 +240,15 @@ def fake_chunks(count: int) -> list[Chunk]:
 
 def test_rerank_breaks_ties_in_the_retrievers_favour() -> None:
     chunks = fake_chunks(FEEDBACK_CANDIDATES)
-    # One vote buys SHIFT places, so rank 3 with +1 lands level with rank 1.
-    net = {chunk_hash("text 3"): 1}
+    # One vote buys SHIFT places, so this chunk lands level with the one SHIFT
+    # ranks above it. Derived from the constant rather than written out, or a
+    # change to SHIFT would fail here with arithmetic instead of with a reason.
+    voted, tied = 1 + SHIFT, 1
+    net = {chunk_hash(f"text {voted}"): 1}
 
     order = [c.chunk_id for c in rerank(chunks, net)]
 
-    assert order[:3] == ["x.md#1", "x.md#3", "x.md#2"], "a tie goes to the retriever"
+    assert order[:2] == [f"x.md#{tied}", f"x.md#{voted}"], "a tie goes to the retriever"
 
 
 def test_rerank_with_several_voted_chunks_is_not_the_lone_vote_arithmetic() -> None:

@@ -150,10 +150,16 @@ export function summarise(
  *
  * Without it the row above is true but incomplete in the most misleading way:
  * every other technique is a function of its query, so "they retrieved different
- * evidence" reads as "these two techniques disagree". A side whose ranking was
- * shifted by stored votes did not disagree about this query — it is carrying the
- * history of earlier ones, and re-running the same comparison after more votes
- * can give a different answer.
+ * evidence" reads as "these two techniques disagree". A side reranked by stored
+ * votes is not only answering this query — it is carrying judgments cast on
+ * earlier ones.
+ *
+ * What this clause must NOT claim is that the votes changed anything. The count
+ * is matched rows, not rows that moved a passage: an upvote on the passage that
+ * was already first, a downvote on the last candidate, or a +1 and a −1 that
+ * cancel all leave the ranking exactly as the retriever had it. So the tense is
+ * forward-looking — this CAN change — and the run's own trace is where a reader
+ * sees what actually moved.
  */
 function feedbackNote(a: RunResponse, b: RunResponse): string {
   const sides = [
@@ -163,15 +169,15 @@ function feedbackNote(a: RunResponse, b: RunResponse): string {
 
   if (sides.length === 0) return "";
 
-  const applied = sides
+  const counted = sides
     .map(
       (side) =>
-        `${side.label} (${side.run.technique}) applied ${side.run.metadata.feedback_votes} stored ` +
+        `${side.label} (${side.run.technique}) counted ${side.run.metadata.feedback_votes} stored ` +
         `vote${side.run.metadata.feedback_votes === 1 ? "" : "s"}`,
     )
     .join(" and ");
 
-  return ` ${applied} to its ranking, so this comparison depends on feedback history as well as the query — the same two techniques on the same query gave a different result before those votes were cast.`;
+  return ` ${counted} against its candidates, so this comparison depends on feedback history as well as the query: run it again after more votes and it can come out differently. The trace says which passages the votes actually moved.`;
 }
 
 function comparison(

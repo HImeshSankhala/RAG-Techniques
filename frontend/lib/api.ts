@@ -56,9 +56,11 @@ export interface Metadata {
   groundedness: number;
   cost_estimate_usd: number;
   /**
-   * Stored votes this run's ranking was built from — Feedback RAG only, 0 for
-   * every other technique. Non-zero means the result depends on accumulated
-   * history, which is what the compare row has to say out loud.
+   * Stored votes counted against this run's candidates — Feedback RAG only, 0 for
+   * every other technique. Matched rows, NOT rows that moved something: the cap
+   * may have discarded some, and a vote can point where the retriever already
+   * did. Non-zero means the result depends on accumulated history, which is what
+   * the compare row has to say out loud.
    */
   feedback_votes: number;
 }
