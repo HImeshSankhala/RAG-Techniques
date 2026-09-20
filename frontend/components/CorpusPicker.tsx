@@ -60,8 +60,9 @@ export function CorpusPicker({
             {corpus.documents} document{corpus.documents === 1 ? "" : "s"}.
           </p>
           <p className="text-xs text-slate-500">
-            Three techniques are unavailable here and say why in the selector. This corpus is
-            deleted after an hour.
+            Three techniques are unavailable here and say why in the selector. This corpus
+            stops working an hour after upload, and is deleted the next time the server sweeps
+            — on the next upload, the next restart, or the moment you try to use it again.
           </p>
           <button
             type="button"

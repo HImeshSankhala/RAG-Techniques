@@ -2,8 +2,10 @@
 
 The disk path stays as thin as it was. The upload path is the one that reads
 *untrusted* input, and the difference shows in the code: every limit is checked
-before the work it bounds, the filename is used only as a label, and nothing is
-ever written to the filesystem.
+before the work it bounds, the filename is used only as a label, and nothing
+here opens or writes a path. (The web layer is what touches disk on this path:
+Starlette spools a large multipart part to a temp file of its own before the
+route sees it.)
 """
 
 import io

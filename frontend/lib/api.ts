@@ -323,7 +323,8 @@ export async function deleteDocuments(sessionId: string): Promise<void> {
   try {
     await fetch(`${API_BASE_URL}/api/documents/${sessionId}`, { method: "DELETE" });
   } catch {
-    // Best-effort. The corpus expires on its own, and a failed reset must not
-    // strand the reader on a corpus the UI has already stopped using.
+    // Best-effort. The corpus is refused once its TTL passes and dropped by the
+    // next sweep either way, so a failed reset costs disk until then — it must
+    // not strand the reader on a corpus the UI has already stopped using.
   }
 }

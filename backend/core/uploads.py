@@ -166,8 +166,9 @@ def _label(documents: list[Document]) -> str:
 def _check_limits(files: list[tuple[str, bytes]]) -> None:
     """Refuse oversized uploads before any parsing happens.
 
-    Checked here, not after extraction: the point of a byte cap is to bound the
-    work, so it has to run before the work does.
+    Checked before extraction, so the byte cap bounds the parsing. It does NOT
+    bound the reading: by the time these bytes exist, they have been read. The
+    route checks each part's declared size first, which is the half that can.
     """
     if not files:
         raise UploadRejected("No files were uploaded.")
