@@ -17,7 +17,7 @@ export function TechniqueCard({ technique }: { technique: Technique }) {
         <h3 className="font-semibold tracking-tight group-hover:underline">
           {technique.display_name}
         </h3>
-        <StatusBadge implemented={technique.implemented} />
+        <StatusBadge implemented={technique.implemented} docsOnly={technique.docs_only} />
       </div>
       <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
         {technique.tagline}
@@ -26,8 +26,17 @@ export function TechniqueCard({ technique }: { technique: Technique }) {
   );
 }
 
-function StatusBadge({ implemented }: { implemented: boolean }) {
-  const label = implemented ? "Runnable" : "Docs only";
+function StatusBadge({
+  implemented,
+  docsOnly,
+}: {
+  implemented: boolean;
+  docsOnly: boolean;
+}) {
+  // Three states, not two. "Docs only" derived from `implemented` alone would
+  // badge the next half-built technique as permanently unrunnable — the same
+  // conflation the playground selector used to make in the other direction.
+  const label = docsOnly ? "Docs only" : implemented ? "Runnable" : "Not built yet";
   const classes = implemented
     ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
     : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400";

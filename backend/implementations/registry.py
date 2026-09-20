@@ -44,8 +44,10 @@ class TechniqueInfo:
     # `tagline`: prose about the technique, not a measurement. Strings, because
     # the honest answer is usually a range — `Metadata.llm_calls` counts one run,
     # and Auto RAG's count depends on the route that run happened to pick. Each
-    # range is read off the pipeline's own code, never estimated; the derivation
-    # for every one of them is in LEARNINGS/phase-12-showcase.md.
+    # range is read off the pipeline's own code, never estimated, including the
+    # floors that only an edge path reaches. LEARNINGS/phase-12-showcase.md walks
+    # through the LLM-call derivations; the retrieval-pass ones are one line each
+    # at the `retrieval_passes=` site in the pipeline concerned.
     llm_calls_range: str
     retrieval_passes_range: str
 
@@ -93,21 +95,32 @@ CATALOG: tuple[TechniqueInfo, ...] = (
         name="graph-rag",
         display_name="Graph RAG",
         tagline="Extract entities and relations at index time, then traverse the graph for multi-hop questions.",
-        llm_calls_range="1 (+1 per chunk at index time)",
-        retrieval_passes_range="1",
+        # Zero of each until `make graph` has been run, which is the state a
+        # stranger is in after the quickstart: the optional graph build is what
+        # takes this row off its floor, and without it the pipeline returns
+        # `no_graph` having retrieved and generated nothing.
+        llm_calls_range="0–1 (+1 per chunk at index time)",
+        retrieval_passes_range="0–1",
     ),
     TechniqueInfo(
         name="agentic-rag",
         display_name="Agentic RAG",
         tagline="Plan, retrieve, assess, repeat — an agent loop with explicit stopping criteria.",
-        llm_calls_range="2–4",
+        # Floor is 3, not 2: iteration 1 can never exit the loop. A planner that
+        # says ANSWER with no evidence is forced into a fallback search, and
+        # neither `repeated_action` nor `no_new_evidence` can fire while the
+        # history and the seen-set are still empty — so a second planner call
+        # always happens. See agentic_rag.py's loop.
+        llm_calls_range="3–4",
         retrieval_passes_range="1–3",
     ),
     TechniqueInfo(
         name="interactive-rag",
         display_name="Interactive RAG",
         tagline="Show a draft, let the user mark the useful chunks, then answer again. Human in the loop.",
-        llm_calls_range="2 (draft + final)",
+        # 1 when the human keeps every passage and adds no hint: `finalize` returns
+        # the draft unchanged and makes no call at all (`no_change`).
+        llm_calls_range="1–2 (draft + final)",
         retrieval_passes_range="1–2",
     ),
     TechniqueInfo(

@@ -46,12 +46,14 @@ def test_techniques_match_the_contract() -> None:
 
 
 def test_docs_only_is_declared_not_derived() -> None:
-    """`docs_only` and `implemented` are different claims and must not be aliases.
+    """Pins the catalog's shape: exactly one docs-only entry, and it implies unbuilt.
 
-    Today REALM is both docs-only and unimplemented, so a derived flag would pass
-    every test while being wrong the day a technique is half-built. This asserts
-    the catalog declares it: exactly one entry, and it is the one whose learn page
-    explains why no amount of building would help.
+    Deliberately NOT a claim that `docs_only` is declared rather than derived —
+    no test can be, while REALM is the only unimplemented entry, because
+    `docs_only = not implemented` yields the same answer. What this catches is a
+    second entry being marked docs-only without anyone revisiting the copy that
+    calls REALM "the ninth", and the invariant going the other way: something
+    marked docs-only while also claiming to be runnable.
     """
     body = client.get("/api/techniques").json()
 
