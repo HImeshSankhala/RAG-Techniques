@@ -9,40 +9,114 @@ write-ups of what each phase taught.
 
 ## Status
 
-Phase 6 complete.
+Phases 0–11 complete. **Eight of the nine techniques run end-to-end**; the ninth (REALM)
+is documentation only, on purpose — it is a pre-training method, and its learn page
+explains why no amount of building makes it runnable on a laptop.
 
-- **Read** — all 9 techniques have a learn page at `/learn/<slug>`: what it is, a diagram,
-  a trade-off table, and when *not* to use it. Readable now, even though 6 aren't built.
-- **Run** — Standard RAG, Fusion RAG and Multi-Pass RAG work end-to-end at `/playground`:
-  pick a technique and a model, ask a question, see the answer with the passages it came
-  from and a timing trace.
+- **Read** — all 9 have a learn page at `/learn/<slug>`: what it is, a diagram, a
+  trade-off table, and when *not* to use it.
+- **Run** — `/playground`: pick a technique and a model, ask a question, see the answer
+  with the passages it came from and a timing trace. Standard, Fusion, Multi-Pass, Auto,
+  Graph, Agentic, Interactive and Feedback-Based RAG all work.
 - **Compare** — `/compare` runs two `(technique × model)` sides on one query and measures
-  what differed: evidence overlap, latency, cost, and which chunks only one side saw.
+  what differed: evidence overlap, latency, cost, and which chunks only one side saw. It
+  ships with five preset queries chosen because they diverge — including one 100%-overlap
+  control, because a demo that only shows wins teaches the wrong lesson.
+- **Home** — a comparison table of all nine: model calls, retrieval passes, whether a
+  human is needed, and whether it runs.
 
 **No API key required.** The default backend is a local model via Ollama, so everything
 above runs free. A hosted Haiku model is selectable per query if you add a key — see
-Models below.
+[Models](#models).
+
+## The demos
+
+Three recordings, made locally against the corpus in `backend/data/sample_docs`. They live
+at `assets/playground.gif`, `assets/compare-divergence.gif` and `assets/local-vs-haiku.gif`;
+if they are not there yet they have not been recorded, and
+[`assets/RECORDING.md`](assets/RECORDING.md) is the script for making them. The
+descriptions below are accurate either way.
+
+1. **Playground** — Standard RAG answering from four retrieved passages, with the steps
+   trace showing where the ~15 seconds went.
+   <!-- Once assets/playground.gif exists, uncomment:
+   ![Standard RAG answering in the playground, with its passages and timing trace](assets/playground.gif)
+   -->
+2. **Compare divergence** — Standard RAG vs Fusion RAG on
+   *"What are reversed hostnames used for?"*. Dense retrieval returns no `bigtable.md`
+   chunk at all; BM25 leads with one, and the fused evidence pulls it back. Measured
+   overlap: **1 of 4**. Then the same pair on *"How does Raft elect a leader?"*, where
+   overlap is **4 of 4** — fusion changes nothing, which is the honest other half.
+   <!-- Once assets/compare-divergence.gif exists, uncomment:
+   ![Standard RAG and Fusion RAG compared on two queries: one where their evidence barely overlaps, one where it is identical](assets/compare-divergence.gif)
+   -->
+3. **Local vs Haiku drift** — the same technique and query on `qwen3:8b` and
+   `claude-haiku-4-5`, showing the cost and latency columns diverge.
+   <!-- Once assets/local-vs-haiku.gif exists, uncomment:
+   ![The same query answered by the local model and by Haiku, with differing cost and latency](assets/local-vs-haiku.gif)
+   -->
+
+The four retrieval presets have their captions pinned by `make eval` (`compare.preset-*`),
+so re-indexing cannot quietly turn one of them into a lie. The fifth — the two-part Dynamo
+and Raft question that makes Multi-Pass loop — is not pinned: what it claims is about how
+many passes a pipeline runs, which a retrieval-only harness cannot check. The latency and
+cost figures below are not pinned by anything either.
 
 ## Quickstart
 
-Requires Python 3.11+, **Node 22+** (ESLint 10 needs `>=22`), and
-[Ollama](https://ollama.com) with an ~8B model pulled:
+Developed on macOS. Steps 1–5 are derived from the Makefile and from what CI installs,
+not from a clean-machine run — if you are the first to follow them end to end and something
+is missing, that is a bug worth reporting.
+
+**1. Prerequisites**
+
+| | Version | Checked against |
+|---|---|---|
+| Python | **3.11+** | `backend/pyproject.toml` (`requires-python = ">=3.11"`) |
+| Node | **22+** | `frontend/package.json` (`engines.node`); ESLint 10 needs it |
+| [Ollama](https://ollama.com) | any current | must be running before `make dev` |
+
+**2. Pull the local model.** The tag must match `OLLAMA_MODEL` (default `qwen3:8b`, ~5GB):
 
 ```bash
 ollama pull qwen3:8b
+ollama run qwen3:8b "hi"     # verify it answers
 ```
+
+**3. Install both stacks.**
 
 ```bash
 make setup
-make dev
 ```
 
-Then open http://localhost:3000. API docs at http://localhost:8000/docs.
-
-If your Python 3.11+ interpreter isn't at the default path:
+If your Python 3.11+ interpreter is not at the default path:
 
 ```bash
 make setup PYTHON=/path/to/python3.12
+```
+
+**4. Build the index — do this before the first run.** Nothing is retrievable until you
+do, and every technique will answer "Nothing is indexed yet".
+
+```bash
+make index
+```
+
+**5. Start both servers.**
+
+```bash
+make dev
+```
+
+Open http://localhost:3000. API docs at http://localhost:8000/docs.
+
+**Optional: build the knowledge graph.** Graph RAG — and only Graph RAG — needs it.
+Without it that one technique answers "the knowledge graph has not been built yet"; the
+other seven are unaffected. It costs **no money** (it is local Ollama), but it does cost
+about **3 minutes**: one extraction call per chunk, ~43 calls on the current corpus.
+
+```bash
+make graph
 ```
 
 ## Commands
@@ -50,10 +124,19 @@ make setup PYTHON=/path/to/python3.12
 | Command | What it does |
 |---|---|
 | `make setup` | Create the backend venv, install both stacks |
+| `make index` | Ingest `backend/data/sample_docs` into Chroma — **run before first use** |
 | `make dev` | Backend on :8000 + frontend on :3000 |
-| `make test` | pytest |
+| `make graph` | Build Graph RAG's knowledge graph (~43 local Ollama calls, ~3 min, free) |
+| `make test` | pytest (backend) **and** Vitest (frontend) |
 | `make lint` | ruff + eslint + tsc |
-| `make index` | Ingest `backend/data/sample_docs` into Chroma (run before first use) |
+| `make eval` | Score retrieval against the corpus and re-check every published claim |
+| `make reset-feedback` | Delete every stored Feedback RAG vote |
+
+`make eval` **does** fail loudly — it exits non-zero and names the claim that broke — but
+it is deliberately not part of `make test` and not in CI. It needs a built index and the
+real corpus, neither of which CI has by default. Run it yourself after changing the corpus:
+it is what catches a README sentence or a preset caption that has quietly stopped being
+true, which is a thing that has already happened to this repo twice.
 
 ## Models
 
@@ -67,16 +150,62 @@ Two backends, selectable per query in the playground:
 Latencies are for a single-pass technique. Multi-Pass RAG makes up to 5 model calls per
 query and takes ~45s locally — that cost *is* the lesson it teaches.
 
-Local is the default everywhere and needs no key. To enable the hosted option:
+Local is the default everywhere and needs no key. The hosted path is **opt-in twice**: you
+must add a key, and then select the Haiku model on the specific query you want it for.
+Nothing falls through to it.
 
 ```bash
 cp backend/.env.example backend/.env   # then add ANTHROPIC_API_KEY
 ```
 
-Guardrails on the paid path, because it spends real money: Haiku only (config refuses
-any other model at startup), output capped at 512 tokens, a per-session call cap, and a
-running spend estimate at `GET /api/usage` shown as a badge in the playground. Set a
-spend limit in the Anthropic Console and keep auto-reload off — that is the real cap.
+### The $5 ceiling, and why Haiku only
+
+This project is built to a **$5 Anthropic budget**, and the guardrails are correctness
+requirements rather than good intentions (the full list is in
+[PLAN.md](PLAN.md#cost-guardrails--protect-the-5-anthropic-ceiling)):
+
+- **Haiku only.** `backend/core/config.py` rejects any model id without `haiku` in it, at
+  startup. Opus and Sonnet are not callable from this project at all — one expensive call
+  could eat a large share of $5.
+- **Output capped** at 512 tokens for answers, 256 for router and critique calls.
+- **Iteration caps** — Multi-Pass ≤ 3 passes, Agentic ≤ 3 iterations. On a paid model
+  these are a spend guarantee, not a latency tweak.
+- **A per-session call cap** (`ANTHROPIC_MAX_SESSION_CALLS`, default 50) so a stuck loop
+  during development cannot quietly rack up calls.
+- **A running spend estimate** at `GET /api/usage`, shown as a badge in the playground.
+
+That badge is a local estimate, not your bill. **Set a spend limit in the Anthropic
+Console and keep auto-reload off** — with prepaid credit and auto-reload off, the API
+physically cannot exceed your limit. That is the real cap; everything above just makes
+the $5 last.
+
+Secrets come only from `backend/.env`, which is gitignored. `backend/.env.example` is the
+committed template and its key field is blank.
+
+## Deploying it
+
+**The local model does not deploy.** Ollama runs on your machine; a host has no `qwen3:8b`.
+So there are three honest options, and no fourth:
+
+1. **Flip `LLM_BACKEND=anthropic` and supply a key through host secrets.** Everything
+   works, including compare. But every visitor then spends *your* money against your $5
+   Console cap, and `ANTHROPIC_MAX_SESSION_CALLS` is a per-process valve, not a
+   per-visitor one. Only do this behind a Console spend limit you are happy to lose.
+2. **Ship the frontend and the GIFs only.** The nine learn pages are prerendered from MDX
+   and deploy fine on their own. Everything else needs the API: the home page fetches the
+   catalog with `cache: "no-store"`, so with no backend the technique grid **and** the
+   comparison table are replaced by an error notice, and the playground and compare pages
+   have nothing to call. Worth doing for the writing; expect to link the GIFs for the rest,
+   or give the home page a static fallback first.
+3. **Bring your own key** — point readers at the Quickstart above and let them run it
+   locally with Ollama, free. This is what the project is actually for.
+
+**One caveat that matters for any hosted option.** Feedback RAG's votes and Interactive
+RAG's drafts live in a single shared SQLite file (`backend/rag_lab.db`). There is no
+per-visitor isolation: **one visitor's thumbs reshape every later visitor's Feedback RAG
+ranking**, for everyone, permanently. That is fine — arguably instructive — for a
+single-user local demo, and it is a real problem for a public one. `make reset-feedback`
+on the host is the only undo.
 
 ## Dependency notes
 

@@ -27,9 +27,39 @@ def test_techniques_match_the_contract() -> None:
     body = client.get("/api/techniques").json()
 
     for entry in body:
-        assert set(entry) == {"name", "display_name", "tagline", "implemented", "needs_human"}
+        assert set(entry) == {
+            "name",
+            "display_name",
+            "tagline",
+            "implemented",
+            "needs_human",
+            "docs_only",
+            "llm_calls_range",
+            "retrieval_passes_range",
+        }
         assert entry["name"] and entry["display_name"] and entry["tagline"]
         assert isinstance(entry["implemented"], bool)
+        assert isinstance(entry["docs_only"], bool)
+        # The home comparison table renders these directly; an empty cell would be
+        # a silent gap rather than a visible one.
+        assert entry["llm_calls_range"] and entry["retrieval_passes_range"]
+
+
+def test_docs_only_is_declared_not_derived() -> None:
+    """Pins the catalog's shape: exactly one docs-only entry, and it implies unbuilt.
+
+    Deliberately NOT a claim that `docs_only` is declared rather than derived —
+    no test can be, while REALM is the only unimplemented entry, because
+    `docs_only = not implemented` yields the same answer. What this catches is a
+    second entry being marked docs-only without anyone revisiting the copy that
+    calls REALM "the ninth", and the invariant going the other way: something
+    marked docs-only while also claiming to be runnable.
+    """
+    body = client.get("/api/techniques").json()
+
+    docs_only = [e["name"] for e in body if e["docs_only"]]
+    assert docs_only == ["realm"]
+    assert all(not e["implemented"] for e in body if e["docs_only"])
 
 
 def test_slugs_are_unique_and_url_safe() -> None:
@@ -75,15 +105,20 @@ def test_run_rejects_an_unknown_technique() -> None:
 
 
 def test_run_distinguishes_docs_only_from_unknown() -> None:
-    """A documented-but-unbuilt technique is a different mistake than a typo.
+    """A documented technique is a different mistake than a typo — and REALM is a
+    third: documented and permanently unrunnable.
 
-    Uses whichever technique is still docs-only; `graph-rag` was the example
-    until Phase 8 made it runnable. `realm` is permanent — it cannot run locally
-    at all — so it will not need swapping again.
+    `graph-rag` was the docs-only example until Phase 8 made it runnable. `realm`
+    cannot be made runnable at all, which is why it gets its own message rather
+    than the "not yet" one a half-built technique would get.
     """
     response = client.post("/api/run", json={"technique": "realm", "query": "hi"})
     assert response.status_code == 409
-    assert "not yet runnable" in response.json()["detail"]
+    # Docs-only, so the message must not promise a roadmap: "not yet" would say a
+    # pre-training method is on its way.
+    detail = response.json()["detail"]
+    assert "cannot run here" in detail
+    assert "not yet" not in detail
 
 
 def test_run_rejects_an_empty_query() -> None:

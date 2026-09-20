@@ -15,6 +15,7 @@ import {
   type Technique,
   type Usage,
 } from "@/lib/api";
+import { unavailableReason } from "@/lib/format";
 
 const PRESET_QUERIES = [
   "How does Dynamo handle conflicting concurrent writes?",
@@ -123,15 +124,20 @@ export function Playground({
               }}
               className="mt-1 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm dark:border-slate-700"
             >
-              {techniques.map((t) => (
-                // Docs-only techniques stay visible but disabled: seeing what is
+              {techniques.map((t) => {
+                // Unrunnable techniques stay visible but disabled: seeing what is
                 // coming is part of the point, and a missing option would read as
-                // a bug rather than a roadmap.
-                <option key={t.name} value={t.name} disabled={!t.implemented}>
-                  {t.display_name}
-                  {t.implemented ? "" : " — not built yet"}
-                </option>
-              ))}
+                // a bug rather than a roadmap. Why each one is disabled comes from
+                // `unavailableReason`, so the playground and the compare view
+                // cannot drift into describing the same technique differently.
+                const reason = unavailableReason(t, "playground");
+                return (
+                  <option key={t.name} value={t.name} disabled={reason !== null}>
+                    {t.display_name}
+                    {reason ? ` — ${reason}` : ""}
+                  </option>
+                );
+              })}
             </select>
           </label>
 

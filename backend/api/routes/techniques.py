@@ -18,6 +18,9 @@ def get_techniques() -> list[Technique]:
             tagline=info.tagline,
             implemented=is_implemented,
             needs_human=needs_human(info.name),
+            docs_only=info.docs_only,
+            llm_calls_range=info.llm_calls_range,
+            retrieval_passes_range=info.retrieval_passes_range,
         )
         for info, is_implemented in list_techniques()
     ]

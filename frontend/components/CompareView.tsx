@@ -12,6 +12,7 @@ import {
   type Technique,
   type Usage,
 } from "@/lib/api";
+import { unavailableReason } from "@/lib/format";
 
 /**
  * Preset queries chosen because they *are* the lesson.
@@ -258,14 +259,19 @@ function SidePicker({
             onChange={(e) => onTechnique(e.target.value)}
             className="mt-1 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm dark:border-slate-700"
           >
-            {techniques.map((t) => (
+            {techniques.map((t) => {
               // A technique that pauses for a person has no honest unattended
               // result, so it is listed but cannot be picked (the API 409s too).
-              <option key={t.name} value={t.name} disabled={!t.implemented || t.needs_human}>
-                {t.display_name}
-                {!t.implemented ? " — not built yet" : t.needs_human ? " — needs a human" : ""}
-              </option>
-            ))}
+              // The reason string is shared with the playground so the two
+              // selectors cannot describe the same technique differently.
+              const reason = unavailableReason(t, "compare");
+              return (
+                <option key={t.name} value={t.name} disabled={reason !== null}>
+                  {t.display_name}
+                  {reason ? ` — ${reason}` : ""}
+                </option>
+              );
+            })}
           </select>
         </label>
         <label className="block">

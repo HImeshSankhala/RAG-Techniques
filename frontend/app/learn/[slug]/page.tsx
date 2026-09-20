@@ -75,7 +75,12 @@ export default async function LearnPage({ params }: { params: Promise<{ slug: st
           <h1 className="text-3xl font-bold tracking-tight">
             {technique?.display_name ?? slug}
           </h1>
-          {technique && <StatusBadge implemented={technique.implemented} />}
+          {technique && (
+            <StatusBadge
+              implemented={technique.implemented}
+              docsOnly={technique.docs_only}
+            />
+          )}
         </div>
 
         {technique && (
@@ -116,8 +121,17 @@ export default async function LearnPage({ params }: { params: Promise<{ slug: st
   );
 }
 
-function StatusBadge({ implemented }: { implemented: boolean }) {
-  const label = implemented ? "Runnable" : "Docs only";
+function StatusBadge({
+  implemented,
+  docsOnly,
+}: {
+  implemented: boolean;
+  docsOnly: boolean;
+}) {
+  // Three states, not two. "Docs only" derived from `implemented` alone would
+  // badge the next half-built technique as permanently unrunnable — the same
+  // conflation the playground selector used to make in the other direction.
+  const label = docsOnly ? "Docs only" : implemented ? "Runnable" : "Not built yet";
   const classes = implemented
     ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
     : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400";

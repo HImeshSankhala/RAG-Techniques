@@ -15,6 +15,12 @@ export interface Technique {
   implemented: boolean;
   /** Pauses mid-run for a person (Interactive RAG): runnable in the playground, not comparable. */
   needs_human: boolean;
+  /** Can never run here, however much is built — REALM is a pre-training method. */
+  docs_only: boolean;
+  /** Editorial range of model calls per query, e.g. "2-5". Prose, not a measurement. */
+  llm_calls_range: string;
+  /** Editorial range of retrieval passes per query. Same caveat. */
+  retrieval_passes_range: string;
 }
 
 /** Mirrors `api.schemas.ModelInfo`. */

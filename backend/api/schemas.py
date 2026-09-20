@@ -31,6 +31,19 @@ class Technique(BaseModel):
         description="True when a run pauses for a person (Interactive RAG). "
         "Such techniques run in the playground but cannot be compared."
     )
+    docs_only: bool = Field(
+        description="True when the technique can never run here, however much is built "
+        "(REALM is a pre-training method). Different from implemented=False, which only "
+        "means no pipeline exists yet."
+    )
+    llm_calls_range: str = Field(
+        description="Editorial range of model calls per query, e.g. '2-5'. Prose for the "
+        "home comparison table, not a measurement — Metadata.llm_calls counts one run."
+    )
+    retrieval_passes_range: str = Field(
+        description="Editorial range of retrieval passes per query. Same caveat as "
+        "llm_calls_range."
+    )
 
 
 class Chunk(BaseModel):

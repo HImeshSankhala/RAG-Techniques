@@ -27,7 +27,7 @@ from implementations.interactive_rag import (
     StaleDraftError,
     finalize,
 )
-from implementations.registry import get_pipeline, is_known
+from implementations.registry import get_pipeline, is_docs_only, is_known
 
 router = APIRouter(prefix="/api", tags=["run"])
 
@@ -37,9 +37,20 @@ def run_technique(request: RunRequest) -> RunResponse:
     pipeline = get_pipeline(request.technique)
 
     if pipeline is None:
-        # Two different mistakes, two different messages: a typo in the slug is not
-        # the same as asking for a technique that hasn't been built yet.
+        # Three different mistakes, three different messages. A typo in the slug is
+        # not the same as a technique nobody has built yet, and neither is the same
+        # as one nobody can build here: REALM is a pre-training method, so "not yet"
+        # would promise a roadmap item that will never arrive. The catalog declares
+        # that difference (`TechniqueInfo.docs_only`) rather than the route guessing
+        # it from the slug.
         if is_known(request.technique):
+            if is_docs_only(request.technique):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"'{request.technique}' is documented only and cannot run here — "
+                    "it is a pre-training method, not an inference technique. "
+                    "See its learn page for why.",
+                )
             raise HTTPException(
                 status_code=409,
                 detail=f"'{request.technique}' is documented but not yet runnable.",
