@@ -36,6 +36,7 @@ def test_techniques_match_the_contract() -> None:
             "docs_only",
             "llm_calls_range",
             "retrieval_passes_range",
+            "upload_note",
         }
         assert entry["name"] and entry["display_name"] and entry["tagline"]
         assert isinstance(entry["implemented"], bool)
@@ -43,6 +44,10 @@ def test_techniques_match_the_contract() -> None:
         # The home comparison table renders these directly; an empty cell would be
         # a silent gap rather than a visible one.
         assert entry["llm_calls_range"] and entry["retrieval_passes_range"]
+        # Empty for a technique that runs on uploaded documents, a reason for one
+        # that does not. The UI disables the option on exactly this string, so an
+        # empty note on a blocked technique would offer a run that 409s.
+        assert isinstance(entry["upload_note"], str)
 
 
 def test_docs_only_is_declared_not_derived() -> None:

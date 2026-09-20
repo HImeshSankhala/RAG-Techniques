@@ -51,6 +51,13 @@ class TechniqueInfo:
     llm_calls_range: str
     retrieval_passes_range: str
 
+    # Why this technique cannot run against an uploaded corpus, or "" when it can.
+    # Declared per technique rather than derived, because the three reasons are
+    # three different facts and a reader deserves the specific one. Same string
+    # serves the 409 from /api/run and the disabled `<option>` in the UI, so the
+    # gate and the explanation cannot drift apart.
+    upload_note: str = ""
+
     # Documented here, impossible to run here, ever. Distinct from `implemented`,
     # which is derived from PIPELINES membership and means only "no pipeline yet".
     # Conflating the two made the playground offer REALM as "not built yet" — a
@@ -101,6 +108,13 @@ CATALOG: tuple[TechniqueInfo, ...] = (
         # `no_graph` having retrieved and generated nothing.
         llm_calls_range="0–1 (+1 per chunk at index time)",
         retrieval_passes_range="0–1",
+        # Not "the graph has not been built yet" — that state is a lie here. The
+        # graph on disk was extracted from the demo corpus, and its chunk ids
+        # would be resolved against the uploaded one, producing a traversal that
+        # cites passages the upload does not contain. Building a real one costs
+        # one model call per chunk at index time, which is minutes and, on the
+        # paid backend, unbounded spend per upload.
+        upload_note="needs a graph built per corpus (one model call per chunk)",
     ),
     TechniqueInfo(
         name="agentic-rag",
@@ -122,6 +136,10 @@ CATALOG: tuple[TechniqueInfo, ...] = (
         # the draft unchanged and makes no call at all (`no_change`).
         llm_calls_range="1–2 (draft + final)",
         retrieval_passes_range="1–2",
+        # A draft is stored passages plus positional ids, resolved again at
+        # finalize time. It has no record of which corpus it came from, and an
+        # uploaded corpus can expire between the two halves of the run.
+        upload_note="its drafts are stored against the demo corpus",
     ),
     TechniqueInfo(
         name="feedback-rag",
@@ -129,6 +147,9 @@ CATALOG: tuple[TechniqueInfo, ...] = (
         tagline="Thumbs up/down on chunks persist and reweight future rankings.",
         llm_calls_range="1",
         retrieval_passes_range="1",
+        # Votes are permanent and shared — `make reset-feedback` is the only way
+        # out. Votes cast on a corpus that expires in an hour would outlive it.
+        upload_note="its votes are permanent, and an uploaded corpus is not",
     ),
     TechniqueInfo(
         name="realm",
@@ -160,6 +181,23 @@ def needs_human(name: str) -> bool:
     demo that lies about what the technique does.
     """
     return isinstance(PIPELINES.get(name), InteractiveRAG)
+
+
+def upload_note(name: str) -> str:
+    """Why this technique cannot run against uploaded documents, or "" when it can.
+
+    The single gate. /api/run consults it before dispatching, so a technique is
+    blocked at the route rather than left to whatever its pipeline happens to do
+    with a corpus it was not built for — which, for Graph RAG, is to traverse a
+    graph extracted from different documents and cite chunk ids that resolve to
+    other text.
+    """
+    return next((t.upload_note for t in CATALOG if t.name == name), "")
+
+
+def runs_on_uploads(name: str) -> bool:
+    """Whether this technique may run against an uploaded corpus."""
+    return name in PIPELINES and not upload_note(name)
 
 
 def get_pipeline(name: str) -> RAGPipeline | None:

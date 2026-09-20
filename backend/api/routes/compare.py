@@ -50,13 +50,16 @@ def compare(request: CompareRequest) -> CompareResponse:
         # ~11s each sequentially, versus not completing within 600s in parallel.
         # Ollama serialises same-model requests anyway, so there was never any
         # throughput to win here.
-        a, b = _run_side(request.query, request.a), _run_side(request.query, request.b)
+        a, b = (
+            _run_side(request.query, request.a, request.session_id),
+            _run_side(request.query, request.b, request.session_id),
+        )
     else:
         # At most one side is local; the other is network-bound, so they genuinely
         # overlap and the comparison finishes in max(a, b) instead of a + b.
         with ThreadPoolExecutor(max_workers=2) as pool:
             futures = [
-                pool.submit(_run_side, request.query, side)
+                pool.submit(_run_side, request.query, side, request.session_id)
                 for side in (request.a, request.b)
             ]
             # .result() re-raises in this thread, so HTTPException still reaches
@@ -79,8 +82,17 @@ def _both_local(request: CompareRequest) -> bool:
         return False
 
 
-def _run_side(query: str, side: ComparisonSide) -> RunResponse:
-    return run_technique(RunRequest(technique=side.technique, query=query, model=side.model))
+def _run_side(query: str, side: ComparisonSide, session_id: str | None) -> RunResponse:
+    # One session id for both sides, taken from the request rather than per side:
+    # a comparison whose halves read different corpora would be comparing corpora.
+    # `run_technique` opens the corpus per side, which is what makes the fan-out
+    # below safe — the collection is held in a ContextVar, and a ThreadPoolExecutor
+    # copies the caller's context into each worker rather than sharing one.
+    return run_technique(
+        RunRequest(
+            technique=side.technique, query=query, model=side.model, session_id=session_id
+        )
+    )
 
 
 def _diff(request: CompareRequest, a: RunResponse, b: RunResponse) -> ComparisonDiff:
