@@ -212,9 +212,17 @@ function comparison(
   }
 
   if (diff.chunk_overlap_pct === 100) {
-    return diff.same_technique && diff.same_model
-      ? `${axis}, so any difference in the answers is the model's own run-to-run variation.`
-      : `${axis}. They retrieved identical evidence, so any difference in the answers came from generation, not retrieval.`;
+    if (diff.same_technique && diff.same_model) {
+      return `${axis}, so any difference in the answers is the model's own run-to-run variation.`;
+    }
+    // An identical result is a finding, not a blank, and on an uploaded corpus it
+    // is the single most likely outcome — so it gets said rather than glossed.
+    // What it is NOT allowed to do is explain itself: `chunk_overlap_pct` is
+    // computed from retrieved ids alone, so any sentence about *why* two
+    // techniques agreed (the corpus is small, the terms are everywhere, dense
+    // and keyword ranked alike) would be a claim this number cannot support.
+    // Only the count, the corpus and the consequence are derivable.
+    return `${axis}. They retrieved identical evidence — the same ${diff.chunk_overlap} passage${diff.chunk_overlap === 1 ? "" : "s"}${corpusNote(a)} — so any difference in the answers came from generation, not retrieval.`;
   }
 
   if (diff.chunk_overlap === 0) {
@@ -222,6 +230,19 @@ function comparison(
   }
 
   return `${axis}. They agreed on ${diff.chunk_overlap} of the retrieved chunks and differed on the rest, so retrieval — not just generation — is part of why the answers differ.`;
+}
+
+/**
+ * ` on your-file.pdf`, or "" for the demo corpus.
+ *
+ * Named only when it is NOT the default. On the demo corpus the reader already
+ * knows what answered; on their own documents, a result they may find
+ * disappointing should say which corpus produced it. Both sides ran the same
+ * corpus by construction — /api/compare takes one session id, not one per side —
+ * so reading it off A is not a simplification.
+ */
+function corpusNote(a: RunResponse): string {
+  return a.corpus && a.corpus !== "demo corpus" ? ` on ${a.corpus}` : "";
 }
 
 function ChunkList({ label, ids }: { label: string; ids: string[] }) {

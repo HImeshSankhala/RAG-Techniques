@@ -30,6 +30,7 @@ function run(overrides: Partial<RunResponse> = {}): RunResponse {
     retrieved_chunks: chunks("dynamo.md#0", "dynamo.md#1"),
     steps: [],
     draft_id: null,
+    corpus: "demo corpus",
     ...overrides,
     metadata: {
       model: "qwen3:8b",
@@ -152,6 +153,9 @@ describe("summarise — the lesson clause", () => {
 
     expect(sentence).toContain("identical evidence");
     expect(sentence).toContain("generation, not retrieval");
+    // The demo corpus is the default and goes unnamed: naming it in every
+    // sentence is noise, and the reader on the default path never chose it.
+    expect(sentence).not.toContain(" on demo corpus");
   });
 
   it("says the evidence was disjoint when both sides retrieved and shared nothing", () => {
@@ -423,5 +427,54 @@ describe("formatDelta", () => {
     // The LLM-calls and steps columns pass humanise=false: "1.0s calls" would be
     // nonsense, so a big count stays a count.
     expect(formatDelta(1500, "")).toBe("+1500");
+  });
+});
+
+// --- The null result on somebody else's corpus -----------------------------
+
+describe("summarise — an uploaded corpus that did not diverge", () => {
+  const identical = diff({
+    chunk_overlap_pct: 100,
+    chunk_overlap: 4,
+    same_technique: false,
+    same_model: true,
+  });
+  const uploaded = (technique: string) => run({ technique, corpus: "notes.pdf" });
+
+  it("names the corpus that produced the identical result", () => {
+    // The likeliest outcome of the whole upload feature, and the one a reader is
+    // most likely to read as "the techniques don't matter". It has to be stated
+    // as a measurement of a named corpus, not left as a shrug.
+    const sentence = summarise(identical, uploaded("standard-rag"), uploaded("fusion-rag"), 0);
+
+    expect(sentence).toContain("notes.pdf");
+    expect(sentence).toContain("identical evidence");
+    expect(sentence).toContain("4 passages");
+  });
+
+  it("does not claim WHY the two techniques agreed", () => {
+    // `chunk_overlap_pct` is computed from retrieved ids alone. It cannot tell a
+    // small corpus from a query whose terms are everywhere from two rankings that
+    // happened to coincide — and a sentence that picks one is inventing a cause
+    // the number does not carry. This is the assertion that stops the next
+    // rewrite from "explaining" the null result.
+    const sentence = summarise(identical, uploaded("standard-rag"), uploaded("fusion-rag"), 0);
+
+    for (const cause of ["too small", "because", "not enough", "only "]) {
+      expect(sentence).not.toContain(cause);
+    }
+  });
+
+  it("still says nothing diverged when one passage was retrieved, not four", () => {
+    // Plural agreement is part of the claim: "the same 1 passages" reads as a
+    // formatting bug and undermines a sentence whose whole job is to be believed.
+    const sentence = summarise(
+      diff({ chunk_overlap_pct: 100, chunk_overlap: 1, same_technique: false, same_model: true }),
+      uploaded("standard-rag"),
+      uploaded("auto-rag"),
+      0,
+    );
+
+    expect(sentence).toContain("1 passage on notes.pdf");
   });
 });

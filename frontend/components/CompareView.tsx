@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CorpusPicker } from "@/components/CorpusPicker";
 import { DiffSummary } from "@/components/DiffSummary";
 import { ResultPanel } from "@/components/ResultPanel";
 import {
@@ -10,6 +11,7 @@ import {
   type CompareResponse,
   type ModelInfo,
   type Technique,
+  type UploadedCorpus,
   type Usage,
 } from "@/lib/api";
 import { unavailableReason } from "@/lib/format";
@@ -69,6 +71,11 @@ export function CompareView({
   const [aModel, setAModel] = useState(defaultModel);
   const [bModel, setBModel] = useState(defaultModel);
 
+  // One corpus for the whole comparison. The API takes a single session id for
+  // the same reason: two sides reading different corpora would be comparing
+  // corpora rather than techniques.
+  const [corpus, setCorpus] = useState<UploadedCorpus | null>(null);
+
   const [result, setResult] = useState<CompareResponse | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -96,6 +103,7 @@ export function CompareView({
           query.trim(),
           { technique: aTechnique, model: aModel || null },
           { technique: bTechnique, model: bModel || null },
+          corpus?.session_id,
         ),
       );
     } catch (cause) {
@@ -108,6 +116,26 @@ export function CompareView({
 
   return (
     <div className="space-y-8">
+      <CorpusPicker
+        corpus={corpus}
+        onChange={(next) => {
+          setCorpus(next);
+          // The diff on screen describes two runs over the previous corpus.
+          setResult(null);
+          if (next) {
+            // Both sides must be techniques that can run on an upload, or the
+            // comparison 409s on whichever half is blocked.
+            const allowed = runnable.filter((t) => !t.upload_note);
+            if (aTechnique && runnable.find((t) => t.name === aTechnique)?.upload_note) {
+              setATechnique(allowed[0]?.name ?? "");
+            }
+            if (bTechnique && runnable.find((t) => t.name === bTechnique)?.upload_note) {
+              setBTechnique(allowed[1]?.name ?? allowed[0]?.name ?? "");
+            }
+          }
+        }}
+      />
+
       <form onSubmit={handleCompare} className="space-y-5">
         <div className="grid gap-5 lg:grid-cols-2">
           <SidePicker
@@ -118,6 +146,7 @@ export function CompareView({
             model={aModel}
             onTechnique={setATechnique}
             onModel={setAModel}
+            onUpload={corpus !== null}
           />
           <SidePicker
             label="B"
@@ -127,6 +156,7 @@ export function CompareView({
             model={bModel}
             onTechnique={setBTechnique}
             onModel={setBModel}
+            onUpload={corpus !== null}
           />
         </div>
 
@@ -142,8 +172,11 @@ export function CompareView({
           />
         </label>
 
+        {/* Every preset and its note is a measured claim about the demo corpus
+            ("dense leads with raft.md"). None of them is true of an upload, so
+            they are not offered against one. */}
         <div className="flex flex-wrap gap-2">
-          {PRESETS.map((preset) => (
+          {(corpus ? [] : PRESETS).map((preset) => (
             <button
               key={preset.query}
               type="button"
@@ -237,6 +270,7 @@ function SidePicker({
   model,
   onTechnique,
   onModel,
+  onUpload,
 }: {
   label: string;
   techniques: Technique[];
@@ -245,6 +279,7 @@ function SidePicker({
   model: string;
   onTechnique: (value: string) => void;
   onModel: (value: string) => void;
+  onUpload: boolean;
 }) {
   return (
     <fieldset className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
@@ -264,7 +299,7 @@ function SidePicker({
               // result, so it is listed but cannot be picked (the API 409s too).
               // The reason string is shared with the playground so the two
               // selectors cannot describe the same technique differently.
-              const reason = unavailableReason(t, "compare");
+              const reason = unavailableReason(t, "compare", onUpload);
               return (
                 <option key={t.name} value={t.name} disabled={reason !== null}>
                   {t.display_name}

@@ -21,6 +21,12 @@ export interface Technique {
   llm_calls_range: string;
   /** Editorial range of retrieval passes per query. Same caveat. */
   retrieval_passes_range: string;
+  /**
+   * Why this technique cannot run against uploaded documents, or "" when it can.
+   * The same string the API's 409 uses, so the disabled option and the refusal
+   * cannot say different things.
+   */
+  upload_note: string;
 }
 
 /** Mirrors `api.schemas.ModelInfo`. */
@@ -81,6 +87,8 @@ export interface RunResponse {
   metadata: Metadata;
   /** Set when the run paused for human review; pass it to `finalizeDraft`. */
   draft_id: string | null;
+  /** Which corpus answered: "demo corpus", or an uploaded corpus's label. */
+  corpus: string;
 }
 
 /** Mirrors `api.schemas.ComparisonSide`. */
@@ -112,6 +120,15 @@ export interface CompareResponse {
   a: RunResponse;
   b: RunResponse;
   diff: ComparisonDiff;
+}
+
+/** Mirrors `api.schemas.UploadResponse`. */
+export interface UploadedCorpus {
+  session_id: string;
+  label: string;
+  documents: number;
+  chunks: number;
+  expires_in_seconds: number;
 }
 
 /** Mirrors `api.schemas.UsageResponse`. */
@@ -198,10 +215,18 @@ export function runTechnique(
   technique: string,
   query: string,
   model?: string,
+  sessionId?: string | null,
 ): Promise<RunResponse> {
   return apiFetch<RunResponse>("/api/run", {
     method: "POST",
-    body: JSON.stringify({ technique, query, model: model ?? null }),
+    body: JSON.stringify({
+      technique,
+      query,
+      model: model ?? null,
+      // Omitted means the demo corpus. There is no third state: the API 404s an
+      // id it does not know rather than falling back.
+      session_id: sessionId ?? null,
+    }),
   });
 }
 
@@ -216,10 +241,13 @@ export function compareTechniques(
   query: string,
   a: ComparisonSide,
   b: ComparisonSide,
+  sessionId?: string | null,
 ): Promise<CompareResponse> {
   return apiFetch<CompareResponse>("/api/compare", {
     method: "POST",
-    body: JSON.stringify({ query, a, b }),
+    // One session id for the whole comparison, not one per side — both halves
+    // read the same corpus or the comparison is about corpora, not techniques.
+    body: JSON.stringify({ query, a, b, session_id: sessionId ?? null }),
   });
 }
 
@@ -256,4 +284,46 @@ export function submitFeedback(
     method: "POST",
     body: JSON.stringify({ technique, query, chunk_ids: chunkIds, rating }),
   });
+}
+
+/**
+ * POST /api/documents — index uploaded files into a corpus of their own.
+ *
+ * Multipart, so this is the one call that does not go through `apiFetch`: setting
+ * a JSON content-type on a FormData body stops the browser from adding the
+ * multipart boundary, and the request arrives unparseable.
+ */
+export async function uploadDocuments(files: File[]): Promise<UploadedCorpus> {
+  const form = new FormData();
+  for (const file of files) form.append("files", file);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/api/documents`, { method: "POST", body: form });
+  } catch {
+    throw new ApiError(`Could not reach the API at ${API_BASE_URL}. Is the backend running?`, 0);
+  }
+
+  if (!response.ok) {
+    let detail = `${response.status} ${response.statusText}`;
+    try {
+      const body = await response.json();
+      if (typeof body?.detail === "string") detail = body.detail;
+    } catch {
+      /* keep the status-line fallback */
+    }
+    throw new ApiError(detail, response.status);
+  }
+
+  return (await response.json()) as UploadedCorpus;
+}
+
+/** DELETE /api/documents/:id — drop an uploaded corpus now rather than at its TTL. */
+export async function deleteDocuments(sessionId: string): Promise<void> {
+  try {
+    await fetch(`${API_BASE_URL}/api/documents/${sessionId}`, { method: "DELETE" });
+  } catch {
+    // Best-effort. The corpus expires on its own, and a failed reset must not
+    // strand the reader on a corpus the UI has already stopped using.
+  }
 }
