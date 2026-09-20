@@ -85,9 +85,11 @@ def _both_local(request: CompareRequest) -> bool:
 def _run_side(query: str, side: ComparisonSide, session_id: str | None) -> RunResponse:
     # One session id for both sides, taken from the request rather than per side:
     # a comparison whose halves read different corpora would be comparing corpora.
-    # `run_technique` opens the corpus per side, which is what makes the fan-out
-    # below safe — the collection is held in a ContextVar, and a ThreadPoolExecutor
-    # copies the caller's context into each worker rather than sharing one.
+    # `run_technique` opens the corpus per side, INSIDE the worker, which is what
+    # makes the fan-out below safe: `concurrent.futures` does not carry a
+    # ContextVar into a worker thread, so a collection entered out here would not
+    # survive the hop. Entering it in there does. See `core.retrieval.hybrid` for
+    # the same hazard handled the other way.
     return run_technique(
         RunRequest(
             technique=side.technique, query=query, model=side.model, session_id=session_id

@@ -21,6 +21,7 @@ pipeline above stays responsible for narrating what it chose and why.
 """
 
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from typing import NamedTuple
 
 from core import embeddings, keyword, vectorstore
@@ -60,9 +61,18 @@ def hybrid(query: str, top_k: int) -> HybridResult:
     """
     candidates = top_k * CANDIDATE_MULTIPLIER
 
+    # Each branch runs inside a COPY of this thread's context, because
+    # `concurrent.futures` does not propagate ContextVars — a worker thread starts
+    # from the defaults. Since Phase 13 the active collection lives in one
+    # (`vectorstore.active()`), so without this the dense and keyword halves of a
+    # hybrid retrieval silently read the demo corpus while the caller was asking
+    # about uploaded documents: an answer that cites passages the reader never
+    # uploaded, with nothing anywhere reporting an error. Two copies rather than
+    # one shared Context, because a Context cannot be entered by two threads at
+    # once.
     with ThreadPoolExecutor(max_workers=2) as pool:
-        dense_future = pool.submit(dense, query, candidates)
-        sparse_future = pool.submit(keyword.query, query, candidates)
+        dense_future = pool.submit(copy_context().run, dense, query, candidates)
+        sparse_future = pool.submit(copy_context().run, keyword.query, query, candidates)
         dense_hits, sparse_hits = dense_future.result(), sparse_future.result()
 
     return HybridResult(

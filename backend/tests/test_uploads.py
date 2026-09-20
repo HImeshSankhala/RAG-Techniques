@@ -196,6 +196,26 @@ def test_bm25_does_not_score_an_upload_with_demo_corpus_statistics(require_index
     assert all(c.source != "quokka.md" for c in keyword.query("quokka", settings.top_k))
 
 
+def test_hybrid_retrieval_keeps_the_corpus_across_its_thread_fan_out(
+    require_index: None,
+) -> None:
+    """Caught in a live run, and invisible to every other test here.
+
+    `retrieval.hybrid` submits dense and BM25 to a ThreadPoolExecutor, and
+    `concurrent.futures` does not carry ContextVars into a worker — so both halves
+    started from the default collection and answered out of the demo corpus while
+    the reader was asking about their own documents. No error, no empty result:
+    a fluent answer citing passages they never uploaded.
+    """
+    corpus = uploads.create([UPLOADED])
+    with uploads.corpus(corpus.session_id):
+        result = retrieval.hybrid("Where do quokkas live?", settings.top_k)
+
+    for hits in (result.dense, result.sparse, result.fused):
+        assert hits, "every branch of a hybrid retrieval should return something"
+        assert {c.source for c in hits} == {"quokka.md"}
+
+
 def test_chunk_ids_do_not_collide_with_the_curated_corpus(require_index: None) -> None:
     """An upload named like a bundled document keeps its own ids because it has
     its own collection — positional ids would otherwise overwrite each other."""
