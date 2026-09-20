@@ -23,7 +23,7 @@ explains why no amount of building makes it runnable on a laptop.
   ships with five preset queries chosen because they diverge — including one 100%-overlap
   control, because a demo that only shows wins teaches the wrong lesson.
 - **Home** — a comparison table of all nine: model calls, retrieval passes, whether a
-  human is needed, and what each is for.
+  human is needed, and whether it runs.
 
 **No API key required.** The default backend is a local model via Ollama, so everything
 above runs free. A hosted Haiku model is selectable per query if you add a key — see
@@ -56,12 +56,17 @@ descriptions below are accurate either way.
    ![The same query answered by the local model and by Haiku, with differing cost and latency](assets/local-vs-haiku.gif)
    -->
 
-Every claim a preset makes about retrieval is pinned by `make eval`, so re-indexing cannot
-quietly turn one of these captions into a lie.
+The four retrieval presets have their captions pinned by `make eval` (`compare.preset-*`),
+so re-indexing cannot quietly turn one of them into a lie. The fifth — the two-part Dynamo
+and Raft question that makes Multi-Pass loop — is not pinned: what it claims is about how
+many passes a pipeline runs, which a retrieval-only harness cannot check. The latency and
+cost figures below are not pinned by anything either.
 
 ## Quickstart
 
-Tested on macOS. A stranger on a clean machine needs all of steps 1–5.
+Developed on macOS. Steps 1–5 are derived from the Makefile and from what CI installs,
+not from a clean-machine run — if you are the first to follow them end to end and something
+is missing, that is a bug worth reporting.
 
 **1. Prerequisites**
 
@@ -127,10 +132,11 @@ make graph
 | `make eval` | Score retrieval against the corpus and re-check every published claim |
 | `make reset-feedback` | Delete every stored Feedback RAG vote |
 
-`make eval` is deliberately not part of `make test` and not in CI: it scores retrieval
-quality rather than asserting correctness, so it is a number you read and argue with, not
-a gate that goes red. Run it after changing the corpus — it is what catches a README or
-a preset caption that has quietly stopped being true.
+`make eval` **does** fail loudly — it exits non-zero and names the claim that broke — but
+it is deliberately not part of `make test` and not in CI. It needs a built index and the
+real corpus, neither of which CI has by default. Run it yourself after changing the corpus:
+it is what catches a README sentence or a preset caption that has quietly stopped being
+true, which is a thing that has already happened to this repo twice.
 
 ## Models
 
@@ -185,9 +191,12 @@ So there are three honest options, and no fourth:
    works, including compare. But every visitor then spends *your* money against your $5
    Console cap, and `ANTHROPIC_MAX_SESSION_CALLS` is a per-process valve, not a
    per-visitor one. Only do this behind a Console spend limit you are happy to lose.
-2. **Ship the frontend and the GIFs only.** The learn pages and the home comparison table
-   are static and deploy fine; the playground and compare have no backend to call and
-   should say so plainly rather than spin. Cheapest, and honest.
+2. **Ship the frontend and the GIFs only.** The nine learn pages are prerendered from MDX
+   and deploy fine on their own. Everything else needs the API: the home page fetches the
+   catalog with `cache: "no-store"`, so with no backend the technique grid **and** the
+   comparison table are replaced by an error notice, and the playground and compare pages
+   have nothing to call. Worth doing for the writing; expect to link the GIFs for the rest,
+   or give the home page a static fallback first.
 3. **Bring your own key** — point readers at the Quickstart above and let them run it
    locally with Ollama, free. This is what the project is actually for.
 

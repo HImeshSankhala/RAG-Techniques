@@ -12,25 +12,25 @@ there is no rush and nothing is broken in the meantime.
 
 **Use exactly these filenames.** The README already points at them.
 
-## Before you record: one command
+## Before you record
 
 ```bash
+make index      # first: the eval harness exits 1 on an empty index
 make eval
-```
-
-Every caption in the README and every preset note in the compare view is a claim about
-*this* index. Re-indexing can silently falsify them — it already did once, which is why
-the harness exists. If the four `compare.preset-*` claims come back `ok`, the queries
-below still behave the way the captions say. **If any fail, stop and fix the caption, not
-the recording.** Expected output ends with something like `25 claims: 25 ok, 0 failed`.
-
-Then:
-
-```bash
-make index      # if you have not already
-make graph      # only if you plan to film Graph RAG; ~3 min, free
 make dev
 ```
+
+Four of the five compare presets carry a claim id (`compare.preset-*`) that pins their
+caption to *this* index. Re-chunking the corpus can silently falsify one — it already did
+once, which is why the harness exists. If those four come back `ok`, the queries below
+still behave the way the captions say. **If any fail, stop and fix the caption, not the
+recording.** Expected output ends with `25 claims: 25 ok, 0 failed`.
+
+Two things `make eval` cannot check for you: the fifth preset (the two-part Dynamo/Raft
+question) makes a claim about pass counts rather than retrieval, and no harness checks the
+latency or cost figures. Watch those with your own eyes while filming.
+
+None of the three demos films Graph RAG, so `make graph` is not needed here.
 
 ## Setup for every take
 
@@ -87,6 +87,16 @@ mistake for a reader to make.
 ## 3. `local-vs-haiku.gif`
 
 Costs about **$0.002** of real money. It is the only demo that does.
+
+**This one needs a key first**, or the Haiku option is greyed out and step 2 is impossible
+— the API reports the model unavailable and the `<option>` is disabled:
+
+```bash
+cp backend/.env.example backend/.env   # then set ANTHROPIC_API_KEY
+```
+
+Restart the backend so it picks the key up. Set a spend limit in the Anthropic Console and
+keep auto-reload off before you do this.
 
 1. `http://localhost:3000/compare`.
 2. Side **A** → `Standard RAG` on `qwen3:8b`. Side **B** → `Standard RAG` on

@@ -72,19 +72,38 @@ Every range is read off the pipeline's own code, never estimated:
 |---|---|---|
 | Standard, Fusion, Feedback | 1 | one `llm.generate` in `run()` |
 | Auto | 2 | router call + answer call |
-| Graph | 1 (+1/chunk at index time) | one at query time; extraction is `make graph` |
-| Interactive | 2 | Standard's draft, then one more in `finalize()` |
+| Graph | 0–1 (+1/chunk at index time) | 0 until `make graph` has been run; extraction is that build |
+| Interactive | 1–2 | Standard's draft, then one more in `finalize()` — unless nothing changed |
 | Multi-Pass | 2–5 | draft + per pass (critique + re-answer), `max_passes = 3` |
-| Agentic | 2–4 | one planner call per iteration + one answer, `max_iterations = 3` |
+| Agentic | 3–4 | one planner call per iteration + one answer, `max_iterations = 3` |
 
-Multi-Pass and Agentic are worth doing by hand, because they are why a single number would
-not do. Multi-Pass loops `while passes < 3`, so at most two iterations run after the
-initial draft, and each spends a critique plus a re-answer: `1 + 2×2 = 5`. Best case the
-first critique finds no gaps and it stops at 2. Agentic plans before it drafts, so an
-iteration is one call rather than two, and the answer is generated once at the end:
-three iterations cost `3 + 1 = 4`, one iteration costs 2. **Agentic's worst case is
-cheaper than Multi-Pass's** — 4 calls against 5 — which is a real architectural result
-that the table now shows and nine cards never could.
+Three rows are worth doing by hand, and two of them were wrong in the first draft of this
+file — which is the reason the floors are spelled out rather than assumed.
+
+**Multi-Pass, 2–5.** It loops `while passes < 3`, so at most two iterations run after the
+initial draft, each spending a critique plus a re-answer: `1 + 2×2 = 5`. Best case the
+first critique finds no gaps and it stops at 2.
+
+**Agentic, 3–4 — not 2.** Agentic plans before it drafts, so an iteration is one call
+rather than two and the answer is generated once at the end. Three iterations therefore
+cost `3 + 1 = 4`. The tempting floor is "one iteration plus an answer = 2", and it is
+unreachable: iteration 1 cannot exit the loop. A planner that says ANSWER with no evidence
+is overridden into a fallback search (answering from zero passages is the failure RAG
+exists to prevent), `repeated_action` compares against an empty history, and
+`no_new_evidence` compares against an empty seen-set. Something always forces a second
+planner call, so the true floor is 3. **Agentic's worst case is still cheaper than
+Multi-Pass's** — 4 calls against 5 — which is a real architectural result the table shows
+and nine cards never could.
+
+**Interactive, 1–2.** The draft costs one call; `finalize()` normally costs a second. But
+when the human keeps every passage and adds no hint, the evidence is byte-identical to the
+draft's, so a second generation could differ only by sampling noise — and presenting noise
+as the human's doing would be a lie about what the technique does. That path returns the
+draft unchanged, `no_change`, **zero calls**. The cheapest interaction is the one where the
+person agreed with the machine.
+
+The pattern in both corrections: I derived the loop as designed instead of as written. The
+floor of a range lives in the guards, not in the happy path.
 
 ## In place of an algorithm: the claim that expires
 
