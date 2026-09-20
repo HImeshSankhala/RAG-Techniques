@@ -89,6 +89,23 @@ class Settings(BaseSettings):
     # document cannot inflate an Anthropic request.
     max_chunk_chars: int = 1500
 
+    # --- Uploaded corpora (Phase 13) ---------------------------------------
+    # These bound untrusted input. Each one bounds a different resource, which is
+    # why there are five rather than one: bytes bound the parse, characters bound
+    # the embedding work, pages bound pypdf, and the aggregate stops five files
+    # that each pass the per-file cap from adding up to something that doesn't.
+    # None of them bound spend — `top_k` and `max_chunk_chars` above do that, and
+    # they do it identically for any corpus.
+    upload_max_files: int = 5
+    upload_max_file_bytes: int = 2_000_000
+    upload_max_total_bytes: int = 5_000_000
+    upload_max_pdf_pages: int = 50
+    upload_max_text_chars: int = 200_000
+
+    # An uploaded corpus is embeddings on disk that nobody asked to keep. One hour
+    # outlives any realistic sitting with the playground and bounds the footprint.
+    upload_ttl_seconds: int = 3600
+
     # Output budget for local helper calls. Sized for the ones that also reason
     # (`reason=True`, see core/llm.py): Ollama draws thinking tokens from the same
     # num_predict budget as the reply, so a budget sized for the reply alone gets
