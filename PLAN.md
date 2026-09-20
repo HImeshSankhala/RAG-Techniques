@@ -213,8 +213,14 @@ class RAGPipeline(ABC):
 
 ### API contract (mirrored in frontend/lib/api.ts)
 
-- `GET  /api/techniques` → `[{name, display_name, tagline, implemented: bool, needs_human: bool}]`
+- `GET  /api/techniques` → `[{name, display_name, tagline, implemented: bool, needs_human: bool,
+  docs_only: bool, llm_calls_range: str, retrieval_passes_range: str}]`
   `needs_human` (Interactive RAG): runnable in the playground, excluded from compare.
+  `docs_only` (REALM): can never run here, as opposed to `implemented: false`, which only means
+  no pipeline exists yet — the two are different claims and the 409 messages differ (Phase 12).
+  The two `*_range` fields are editorial prose for the home comparison table, declared in
+  `registry.CATALOG` beside `tagline` and derived from each pipeline's own iteration caps.
+  They are ranges, not measurements: `Metadata.llm_calls` counts one run.
 - `GET  /api/models`     → `[{id, display_name, backend, is_paid, is_default, available, note}]`
 - `GET  /api/usage`      → `{spend_estimate_usd, calls, session_calls, session_call_limit}`
 - `POST /api/run`        → `{technique, query, model?}` → `RunResponse` (RAGResult + technique name)
