@@ -119,6 +119,29 @@ about **3 minutes**: one extraction call per chunk, ~43 calls on the current cor
 make graph
 ```
 
+## Bring your own documents
+
+The playground and compare pages can run against your own files instead of the demo corpus.
+Upload up to **5** files (`.txt`, `.md`, `.pdf`) — 2 MB each, 5 MB per upload, 50 pages per
+PDF. They are indexed into a Chroma collection of their own, so the demo corpus is untouched,
+and the corpus stops working an hour after upload.
+
+Uploading needs two dependencies added in this phase — `pypdf` and `python-multipart` — so
+**re-run `make setup`** after pulling.
+
+Three techniques are refused on an uploaded corpus, and say so in the selector:
+
+| Technique | Why |
+|---|---|
+| Graph RAG | Its graph is built once, offline, at a cost of one LLM call per chunk; it has no graph for your files. |
+| Interactive RAG | Its drafts are held server-side against a corpus that expires. |
+| Feedback RAG | Its votes are stored per passage to rerank future runs, which an expiring corpus cannot support. |
+
+**Your own documents may show no difference between techniques, and that is a real result.**
+The demo corpus is deliberately built so techniques diverge. An arbitrary document often has
+none of those properties: every technique retrieves the same passages and answers the same
+way. When that happens the compare view says the evidence was identical rather than hiding it.
+
 ## Commands
 
 | Command | What it does |
@@ -131,6 +154,9 @@ make graph
 | `make lint` | ruff + eslint + tsc |
 | `make eval` | Score retrieval against the corpus and re-check every published claim |
 | `make reset-feedback` | Delete every stored Feedback RAG vote |
+
+Uploaded corpora need no command: they expire on their own, and the backend sweeps expired
+ones at startup and on the next upload.
 
 `make eval` **does** fail loudly — it exits non-zero and names the claim that broke — but
 it is deliberately not part of `make test` and not in CI. It needs a built index and the

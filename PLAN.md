@@ -374,10 +374,23 @@ Each phase ends demo-able. Do not start N+1 until N runs.
 - Deploy notes: the local model doesn't deploy — flip `LLM_BACKEND=anthropic` via host
   secrets, or ship frontend + GIFs only, or bring-your-own-key
 
-### Phase 13 — Bring your own documents (OPTIONAL — decide after Phase 12)
+### Phase 13 — Bring your own documents (BUILT — approved at Phase 12's gate 2)
 
-**Not committed to. Claude must ask before building this** — see the Guardrail in
-CLAUDE.md. It is scoped here so the decision is informed, not so it happens by default.
+**Decided and built.** The owner was asked at Phase 12's gate 2, with the risk below
+restated, and chose to build it. What shipped is the lean version:
+
+- **Five techniques run on an uploaded corpus** — Standard, Fusion, Auto, Multi-Pass,
+  Agentic. Graph, Interactive and Feedback are refused at the route, each with one honest
+  sentence in the selector. Graph would cost an LLM call per uploaded chunk at index time
+  and would resolve the demo-built graph's ids against the upload; the other two hold
+  state keyed to a corpus that expires.
+- **Isolation** is a per-session Chroma collection carried in a ContextVar — including
+  across hybrid retrieval's thread fan-out, which is where it first leaked.
+- **The null result is the product.** When an uploaded corpus makes two techniques return
+  identical evidence, the compare view says so plainly and does not claim why.
+
+See `backend/core/uploads.py`, `backend/api/routes/documents.py` and
+`LEARNINGS/phase-13-bring-your-own-docs.md`.
 
 **What:** upload a PDF/MD/TXT and run the techniques against it instead of the demo corpus.
 
