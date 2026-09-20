@@ -86,4 +86,30 @@ describe("unavailableReason", () => {
     expect(unavailableReason(interactive, "playground")).toBeNull();
     expect(unavailableReason(interactive, "compare")).toContain("human");
   });
+
+  it("gives the API's own reason for a technique blocked on uploaded documents", () => {
+    // The string comes from the server, which also enforces the gate — so the
+    // disabled option and the 409 cannot describe the same refusal differently.
+    const graph = t({ upload_note: "needs a graph built per corpus" });
+
+    expect(unavailableReason(graph, "playground", true)).toBe("needs a graph built per corpus");
+    expect(unavailableReason(graph, "compare", true)).toBe("needs a graph built per corpus");
+  });
+
+  it("does not block that technique on the demo corpus", () => {
+    // Both sides of this `if` typecheck, and getting it backwards disables three
+    // working techniques on the default path — the one everybody sees first.
+    const graph = t({ upload_note: "needs a graph built per corpus" });
+
+    expect(unavailableReason(graph, "playground")).toBeNull();
+    expect(unavailableReason(graph, "playground", false)).toBeNull();
+  });
+
+  it("calls REALM unrunnable rather than upload-blocked", () => {
+    // Branch order again. REALM cannot run anywhere, and "not on your documents"
+    // would imply it runs on the demo corpus.
+    const realm = t({ implemented: false, docs_only: true, upload_note: "" });
+
+    expect(unavailableReason(realm, "playground", true)).toContain("cannot run");
+  });
 });

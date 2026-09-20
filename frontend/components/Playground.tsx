@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { CorpusPicker } from "@/components/CorpusPicker";
 import { DraftReview } from "@/components/DraftReview";
 import { ResultPanel } from "@/components/ResultPanel";
 import {
@@ -13,6 +14,7 @@ import {
   type ModelInfo,
   type RunResponse,
   type Technique,
+  type UploadedCorpus,
   type Usage,
 } from "@/lib/api";
 import { unavailableReason } from "@/lib/format";
@@ -46,6 +48,10 @@ export function Playground({
   const [model, setModel] = useState(models.find((m) => m.is_default)?.id ?? models[0]?.id ?? "");
   const [query, setQuery] = useState(PRESET_QUERIES[0]);
 
+  // null means the curated demo corpus. Held here rather than in CorpusPicker so
+  // switching corpora can clear a result that belongs to the other one.
+  const [corpus, setCorpus] = useState<UploadedCorpus | null>(null);
+
   const [result, setResult] = useState<RunResponse | null>(null);
   // Interactive RAG only: the answer after the human reviewed `result` (the draft).
   const [final, setFinal] = useState<RunResponse | null>(null);
@@ -71,7 +77,12 @@ export function Playground({
     setFinal(null);
 
     try {
-      const response = await runTechnique(technique, query.trim(), model || undefined);
+      const response = await runTechnique(
+        technique,
+        query.trim(),
+        model || undefined,
+        corpus?.session_id,
+      );
       // Switched technique mid-run: drop the stale answer rather than show (and
       // offer to finalize) one technique's draft under another's name.
       if (response.technique === currentTechnique.current) setResult(response);
@@ -106,6 +117,28 @@ export function Playground({
 
   return (
     <div className="space-y-8">
+      <CorpusPicker
+        corpus={corpus}
+        onChange={(next) => {
+          setCorpus(next);
+          // A result is an answer about one corpus. Keeping it on screen after
+          // the corpus changed would attribute it to the new one.
+          setResult(null);
+          setFinal(null);
+          // The current technique may be one that cannot run on an upload, and
+          // its now-disabled option would otherwise stay selected.
+          const blocked = next
+            ? techniques.find((t) => t.name === technique)?.upload_note
+            : "";
+          if (blocked) {
+            const fallback =
+              runnable.find((t) => !t.upload_note)?.name ?? technique;
+            setTechnique(fallback);
+            currentTechnique.current = fallback;
+          }
+        }}
+      />
+
       <form onSubmit={handleRun} className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
@@ -130,7 +163,7 @@ export function Playground({
                 // a bug rather than a roadmap. Why each one is disabled comes from
                 // `unavailableReason`, so the playground and the compare view
                 // cannot drift into describing the same technique differently.
-                const reason = unavailableReason(t, "playground");
+                const reason = unavailableReason(t, "playground", corpus !== null);
                 return (
                   <option key={t.name} value={t.name} disabled={reason !== null}>
                     {t.display_name}
@@ -179,8 +212,11 @@ export function Playground({
           />
         </label>
 
+        {/* Hidden on an uploaded corpus: every preset asks about Dynamo, Bigtable
+            or Raft, and offering them against somebody's own documents is
+            offering four questions guaranteed to retrieve nothing useful. */}
         <div className="flex flex-wrap gap-2">
-          {PRESET_QUERIES.map((preset) => (
+          {(corpus ? [] : PRESET_QUERIES).map((preset) => (
             <button
               key={preset}
               type="button"

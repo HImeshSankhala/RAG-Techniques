@@ -44,6 +44,10 @@ class Technique(BaseModel):
         description="Editorial range of retrieval passes per query. Same caveat as "
         "llm_calls_range."
     )
+    upload_note: str = Field(
+        description="Why this technique cannot run against uploaded documents, or '' "
+        "when it can. Same string the 409 from POST /api/run uses."
+    )
 
 
 class Chunk(BaseModel):
@@ -110,12 +114,26 @@ class UsageResponse(BaseModel):
     note: str = "Local list-price estimate, not your bill. The Console spend limit is the cap."
 
 
+# An opaque token from POST /api/documents. Bounded and character-restricted
+# because it becomes part of a Chroma collection name: `secrets.token_hex`
+# produces exactly this alphabet, so anything else was not issued here.
+SessionId = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=8, max_length=64, pattern=r"^[A-Za-z0-9]+$"),
+]
+
+
 class RunRequest(BaseModel):
     technique: str = Field(description="Technique slug, e.g. 'standard-rag'.")
     query: Query
     model: str | None = Field(
         default=None,
         description="Model id from GET /api/models. Omit to use the configured default.",
+    )
+    session_id: SessionId | None = Field(
+        default=None,
+        description="Uploaded corpus to run against, from POST /api/documents. "
+        "Omit for the bundled demo corpus.",
     )
 
 
@@ -131,6 +149,11 @@ class RunResponse(BaseModel):
     draft_id: str | None = Field(
         default=None,
         description="Set when the run paused for human review; pass it to POST /api/run/final.",
+    )
+    corpus: str = Field(
+        default="demo corpus",
+        description="Which corpus answered — the demo corpus, or the uploaded one's label. "
+        "Present on every run so a reader never has to infer it.",
     )
 
 
@@ -202,11 +225,19 @@ class CompareRequest(BaseModel):
     Both axes vary independently, which is what supports the two interesting
     comparisons: same model + different techniques (does retrieval differ?), and
     same technique + different models (does the model differ?).
+
+    One `session_id` for both sides, not one each. A comparison whose halves read
+    different corpora is comparing corpora, not techniques — making that
+    impossible to express beats validating it after the fact.
     """
 
     query: Query
     a: ComparisonSide
     b: ComparisonSide
+    session_id: SessionId | None = Field(
+        default=None,
+        description="Uploaded corpus both sides run against. Omit for the demo corpus.",
+    )
 
 
 class ComparisonDiff(BaseModel):
@@ -241,3 +272,16 @@ class CompareResponse(BaseModel):
     a: RunResponse
     b: RunResponse
     diff: ComparisonDiff
+
+
+class UploadResponse(BaseModel):
+    """POST /api/documents — the corpus that was just built from uploaded files."""
+
+    session_id: str = Field(description="Pass this on /api/run and /api/compare.")
+    label: str = Field(description="What to call this corpus in the UI.")
+    documents: int
+    chunks: int = Field(
+        description="Chunks indexed. Worth showing: a corpus of four chunks and a "
+        "top_k of four cannot produce a disagreement between techniques."
+    )
+    expires_in_seconds: int = Field(description="After this, the corpus is swept and the id 404s.")

@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 from api.schemas import Technique
-from implementations.registry import list_techniques, needs_human
+from implementations.registry import list_techniques, needs_human, upload_note
 
 router = APIRouter(prefix="/api", tags=["techniques"])
 
@@ -21,6 +21,7 @@ def get_techniques() -> list[Technique]:
             docs_only=info.docs_only,
             llm_calls_range=info.llm_calls_range,
             retrieval_passes_range=info.retrieval_passes_range,
+            upload_note=upload_note(info.name),
         )
         for info, is_implemented in list_techniques()
     ]

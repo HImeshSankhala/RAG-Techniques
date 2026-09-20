@@ -20,6 +20,11 @@ dependencies = [
     # to run — the graph is small enough that a real graph database would be
     # infrastructure bought for nothing.
     "networkx==3.6.1",
+    # Uploaded documents (Phase 13). pypdf is text extraction only — no rendering,
+    # no OCR — which is all the ingest path needs; python-multipart is what lets
+    # Starlette parse the file part of the form at all.
+    "pypdf==6.19.0",
+    "python-multipart==0.0.32",
 ]
 
 [project.optional-dependencies]

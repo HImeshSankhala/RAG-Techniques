@@ -31,14 +31,25 @@ def tokenize(text: str) -> list[str]:
     return _TOKEN.findall(text.lower())
 
 
-@lru_cache(maxsize=1)
-def _index() -> tuple[BM25Okapi, tuple[IndexedChunk, ...]]:
-    """Build the BM25 index over the whole corpus, once per process.
+@lru_cache(maxsize=4)
+def _index(collection: str) -> tuple[BM25Okapi, tuple[IndexedChunk, ...]]:
+    """Build the BM25 index over one collection's corpus, cached per collection.
 
-    Rebuilt only on restart. That is correct today because `make index` is a
-    separate step from serving — but it does mean a re-index while the server is
-    running leaves this stale. Worth revisiting if indexing ever moves online
-    (Phase 13 would force that).
+    `collection` is the cache key and nothing else — the chunks are read from
+    whichever collection is active, which is the same one by construction because
+    `query` passes `vectorstore.active()`. Keying on it is not cosmetic: until
+    Phase 13 this was `maxsize=1` with no argument, so an uploaded query would
+    have been scored with the demo corpus's term statistics — BM25 weights terms
+    by how rare they are *in this corpus*, so the wrong statistics silently
+    produce the wrong ranking rather than an error.
+
+    `maxsize=4` bounds the leak and stops the thrash. Unbounded would hold a BM25
+    index per upload for the TTL window; a size of 1 would re-tokenise the whole
+    corpus on every alternation between the demo corpus and an upload.
+
+    Still rebuilt only on restart for a given collection, so a re-index while the
+    server is running leaves this stale — uploads are immutable once built, so
+    that remains a `make index` concern only.
     """
     chunks = tuple(vectorstore.all_chunks())
     if not chunks:
@@ -64,7 +75,7 @@ def query(text: str, top_k: int) -> list[Chunk]:
     if vectorstore.count() == 0:
         return []
 
-    bm25, chunks = _index()
+    bm25, chunks = _index(vectorstore.active())
     scores = bm25.get_scores(tokenize(text))
 
     ranked = sorted(zip(scores, chunks), key=lambda pair: pair[0], reverse=True)
@@ -81,5 +92,10 @@ def query(text: str, top_k: int) -> list[Chunk]:
 
 
 def reset() -> None:
-    """Drop the cached index. Used by tests that re-index between cases."""
+    """Drop every cached index. Used by tests that re-index, and when a corpus is deleted.
+
+    Coarse on purpose: deletions are rare, and evicting one key out of an
+    `lru_cache` means reaching into its internals. Clearing all four costs a
+    re-tokenise on the next query and cannot leave a deleted corpus reachable.
+    """
     _index.cache_clear()

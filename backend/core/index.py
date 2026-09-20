@@ -9,15 +9,16 @@ statistics) hook in here for the same reason.
 from core import embeddings, vectorstore
 from core.chunking import split_text
 from core.config import settings
-from core.ingest import load_documents
+from core.ingest import Document, load_documents
 
 
-def build_index() -> dict:
-    """Re-index the sample corpus from scratch. Returns counts for the CLI to print."""
-    documents = load_documents(settings.sample_docs_dir)
-    if not documents:
-        raise RuntimeError(f"No documents found in {settings.sample_docs_dir}")
+def chunks_for(documents: list[Document]) -> list[vectorstore.IndexedChunk]:
+    """Split documents into the chunks that go into a collection.
 
+    Shared with the upload path (Phase 13) rather than copied into it: chunk ids
+    are a contract the whole UI reads, and two places that mint them is two places
+    that can disagree about what `dynamo.md#3` means.
+    """
     chunks: list[vectorstore.IndexedChunk] = []
     for document in documents:
         for position, text in enumerate(
@@ -32,6 +33,16 @@ def build_index() -> dict:
                     source=document.source,
                 )
             )
+    return chunks
+
+
+def build_index() -> dict:
+    """Re-index the sample corpus from scratch. Returns counts for the CLI to print."""
+    documents = load_documents(settings.sample_docs_dir)
+    if not documents:
+        raise RuntimeError(f"No documents found in {settings.sample_docs_dir}")
+
+    chunks = chunks_for(documents)
 
     # Drop first: chunk ids are positional, so editing a document shortens the list
     # and would strand the tail chunks of the previous run in the collection.

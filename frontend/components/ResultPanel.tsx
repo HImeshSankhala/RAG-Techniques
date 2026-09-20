@@ -32,6 +32,10 @@ export function ResultPanel({ result, onRate }: { result: RunResponse; onRate?: 
       </section>
 
       <section className="flex flex-wrap gap-2">
+        {/* Which corpus answered. Shown on every run, not only in compare's
+            summary: an answer sourced from an uploaded file reads exactly like
+            one from the demo corpus, and the reader cannot tell them apart. */}
+        <Badge label="corpus" value={result.corpus} />
         <Badge label="model" value={metadata.model} />
         <Badge label="latency" value={formatMs(metadata.latency_ms)} />
         <Badge label="tokens" value={`${metadata.tokens_in} in / ${metadata.tokens_out} out`} />

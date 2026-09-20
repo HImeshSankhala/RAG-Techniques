@@ -4,6 +4,13 @@ The route stays thin: validate, look up the pipeline, call `run`, convert the
 dataclasses to Pydantic. All the interesting work is in the engine, which is what
 makes /api/compare cheap to add in Phase 5 — it calls the same `run` twice.
 
+A run against uploaded documents differs in two places only: the corpus is
+entered for the duration of the call (`uploads.corpus`), and techniques that
+cannot honestly run on it are refused *here*, before dispatch — see
+`registry.upload_note`. Refusing at the route rather than inside the pipeline is
+deliberate: Graph RAG's own "no graph yet" state would be a lie about an uploaded
+corpus, because the graph on disk is real and simply describes other documents.
+
 POST /api/run/final is the second half of a run that paused for a human
 (Interactive RAG). It calls `interactive_rag.finalize` directly rather than going
 through the registry: the registry maps a slug to `run()`, and resuming a draft
@@ -20,6 +27,7 @@ from fastapi import APIRouter, HTTPException
 from api.schemas import Chunk, FinalizeRequest, Metadata, RunRequest, RunResponse, Step
 from core.llm import BudgetExceededError, LLMError, MissingAPIKeyError
 from core.pipeline import RAGResult
+from core.uploads import UnknownCorpusError, corpus
 from implementations.interactive_rag import (
     DraftNotFoundError,
     InteractiveRAG,
@@ -27,7 +35,7 @@ from implementations.interactive_rag import (
     StaleDraftError,
     finalize,
 )
-from implementations.registry import get_pipeline, is_docs_only, is_known
+from implementations.registry import get_pipeline, is_docs_only, is_known, upload_note
 
 router = APIRouter(prefix="/api", tags=["run"])
 
@@ -59,10 +67,23 @@ def run_technique(request: RunRequest) -> RunResponse:
             status_code=404, detail=f"Unknown technique: '{request.technique}'."
         )
 
-    with _llm_errors():
-        result = pipeline.run(request.query, model=request.model)
+    if request.session_id is not None and (note := upload_note(request.technique)):
+        # 409 for the same reason the two above are: a well-formed request for a
+        # technique that cannot run in this state. Checked before the corpus is
+        # opened, so a refused run costs nothing.
+        raise HTTPException(
+            status_code=409,
+            detail=f"'{request.technique}' cannot run on uploaded documents — {note}. "
+            "It still runs on the demo corpus.",
+        )
 
-    return _response(pipeline.name, request.query, result)
+    try:
+        with corpus(request.session_id) as label, _llm_errors():
+            result = pipeline.run(request.query, model=request.model)
+    except UnknownCorpusError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return _response(pipeline.name, request.query, result, label)
 
 
 @router.post("/run/final", response_model=RunResponse)
@@ -78,6 +99,8 @@ def finalize_draft(request: FinalizeRequest) -> RunResponse:
         # 409: the draft conflicts with the index as it now is.
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    # Interactive RAG never runs on an upload (registry.upload_note), so a draft
+    # is always the demo corpus and `_response`'s default is the whole truth.
     return _response(InteractiveRAG.name, query, result)
 
 
@@ -97,7 +120,9 @@ def _llm_errors() -> Iterator[None]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _response(technique: str, query: str, result: RAGResult) -> RunResponse:
+def _response(
+    technique: str, query: str, result: RAGResult, label: str = "demo corpus"
+) -> RunResponse:
     return RunResponse(
         technique=technique,
         query=query,
@@ -106,4 +131,5 @@ def _response(technique: str, query: str, result: RAGResult) -> RunResponse:
         steps=[Step(**vars(s)) for s in result.steps],
         metadata=Metadata(**asdict(result.metadata)),
         draft_id=result.draft_id,
+        corpus=label,
     )
