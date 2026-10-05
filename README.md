@@ -7,9 +7,27 @@ Monorepo — `backend/` (FastAPI + RAG engine), `frontend/` (Next.js App Router 
 Tailwind). See [PLAN.md](PLAN.md) for the phase-by-phase build, and `LEARNINGS/` for
 write-ups of what each phase taught.
 
+## The nine techniques
+
+Model calls and retrieval passes are ranges because the count depends on the path a given
+run takes. Every row links to its learn page; the same table is on the home page, built
+from the same registry entries.
+
+| Technique | What it does | Model calls | Passes |
+|---|---|---|---|
+| [Standard RAG](frontend/content/standard-rag.mdx) | Embed the query, retrieve top-k chunks, answer from them. The baseline everything else is measured against. | 1 | 1 |
+| [Fusion RAG](frontend/content/fusion-rag.mdx) | Run dense and keyword retrieval in parallel, then merge by rank instead of score. | 1 | 1 |
+| [Multi-Pass RAG](frontend/content/multi-pass-rag.mdx) | Draft an answer, critique it for gaps, retrieve again to fill them. Latency bought with accuracy. | 2–5 | 1–3 |
+| [Auto RAG](frontend/content/auto-rag.mdx) | A cheap router call picks the retrieval strategy per query: vector, keyword, or hybrid. | 2 | 1 |
+| [Graph RAG](frontend/content/graph-rag.mdx) | Extract entities and relations at index time, then traverse the graph for multi-hop questions. | 0–1 (+1 per chunk at index time) | 0–1 |
+| [Agentic RAG](frontend/content/agentic-rag.mdx) | Plan, retrieve, assess, repeat — an agent loop with explicit stopping criteria. | 3–4 | 1–3 |
+| [Interactive RAG](frontend/content/interactive-rag.mdx) | Show a draft, let the user mark the useful chunks, then answer again. Human in the loop. | 1–2 (draft + final) | 1–2 |
+| [Feedback-Based RAG](frontend/content/feedback-rag.mdx) | Thumbs up/down on chunks persist and reweight future rankings. | 1 | 1 |
+| [REALM](frontend/content/realm.mdx) | Retrieval trained jointly with the language model. Docs-only here — it cannot run locally. | — | — |
+
 ## Status
 
-Phases 0–11 complete. **Eight of the nine techniques run end-to-end**; the ninth (REALM)
+All 14 phases (0–13) complete. **Eight of the nine techniques run end-to-end**; the ninth (REALM)
 is documentation only, on purpose — it is a pre-training method, and its learn page
 explains why no amount of building makes it runnable on a laptop.
 
@@ -24,6 +42,9 @@ explains why no amount of building makes it runnable on a laptop.
   control, because a demo that only shows wins teaches the wrong lesson.
 - **Home** — a comparison table of all nine: model calls, retrieval passes, whether a
   human is needed, and whether it runs.
+- **Upload** — bring your own `.txt`, `.md` or `.pdf` and run five of the techniques
+  against it instead of the demo corpus, in a collection of its own. See
+  [Bring your own documents](#bring-your-own-documents).
 
 **No API key required.** The default backend is a local model via Ollama, so everything
 above runs free. A hosted Haiku model is selectable per query if you add a key — see
